@@ -1,0 +1,23 @@
+{
+  "name": "mabataki",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Web-native 2D head avatar runtime for real-time communication (PoC)",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
+    "pixi.js": "^8.19.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  }
+}
