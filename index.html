@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>mabataki — Phase 0 mouth editor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #14161a;
+        color: #e8e8ea;
+      }
+      header {
+        padding: 10px 16px;
+        border-bottom: 1px solid #2a2d33;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px 20px;
+        align-items: center;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 8px 0 0;
+        font-weight: 600;
+      }
+      h1 span {
+        color: #9aa0a8;
+        font-weight: 400;
+      }
+      fieldset {
+        border: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      label {
+        font-size: 12px;
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+      }
+      input[type='number'] {
+        width: 52px;
+      }
+      #slider {
+        width: 200px;
+      }
+      #slider-value {
+        font-variant-numeric: tabular-nums;
+        min-width: 4ch;
+      }
+      button {
+        font-size: 12px;
+      }
+      #stage {
+        display: grid;
+        place-items: center;
+        padding: 16px;
+      }
+      #stage canvas {
+        max-width: 100%;
+        height: auto;
+        border: 1px solid #2a2d33;
+        touch-action: none;
+      }
+      #status {
+        font-size: 12px;
+        color: #9aa0a8;
+        padding: 0 16px 12px;
+        margin: 0;
+      }
+      #camera-video {
+        width: 120px;
+        border-radius: 4px;
+        transform: scaleX(-1);
+      }
+      #tracking-values {
+        min-width: 21ch;
+        color: #9aa0a8;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>mabataki <span>key pose editor</span></h1>
+      <fieldset>
+        <label>part <select id="part"></select></label>
+        <label>parameter <select id="parameter"></select></label>
+        <label>key pose <select id="key-pose"></select></label>
+      </fieldset>
+      <fieldset>
+        <label><input type="radio" name="mode" value="edit" checked /> edit</label>
+        <label><input type="radio" name="mode" value="preview" /> preview</label>
+      </fieldset>
+      <fieldset>
+        <label>tool
+          <select id="tool">
+            <option value="move">move</option>
+            <option value="box">box select</option>
+            <option value="region">mesh region</option>
+          </select>
+        </label>
+        <label><input id="soft-selection" type="checkbox" checked /> soft</label>
+        <label>radius <input id="soft-radius" type="range" min="10" max="200" value="80" /></label>
+        <span id="selection-count">0 selected</span>
+        <button id="clear-selection">clear</button>
+        <button id="pin-selection">pin selected</button>
+        <button id="unpin-all">unpin all</button>
+        <span id="pin-count">0 pinned</span>
+        <button id="rebuild-region" disabled>rebuild in region</button>
+        <span id="region-status">no region</span>
+        <button id="undo" disabled>undo</button>
+        <button id="redo" disabled>redo</button>
+      </fieldset>
+      <label>
+        <span id="param-name">parameter</span>
+        <input id="slider" type="range" min="0" max="1" step="0.01" value="0" />
+        <span id="slider-value">0.00</span>
+      </label>
+      <label><input id="animate" type="checkbox" /> animate</label>
+      <fieldset>
+        <button id="camera">start camera</button>
+        <span id="tracking-values">camera off</span>
+        <video id="camera-video" muted playsinline hidden></video>
+      </fieldset>
+      <fieldset>
+        <label>grid <input id="cols" type="number" min="1" max="64" value="8" /> ×
+          <input id="rows" type="number" min="1" max="64" value="6" /></label>
+        <button id="rebuild">rebuild</button>
+        <button id="reset-key">reset key</button>
+      </fieldset>
+      <fieldset>
+        <label>image <input id="image-input" type="file" accept="image/*" /></label>
+        <button id="export">export json</button>
+        <label>import <input id="model-input" type="file" accept="application/json,.json" /></label>
+      </fieldset>
+    </header>
+    <div id="stage"></div>
+    <p id="status"></p>
+    <script type="module" src="/demo/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>mabataki — runtime viewer</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: #14161a; color: #e8e8ea; }
+      header { padding: 10px 16px; border-bottom: 1px solid #2a2d33; display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: center; }
+      h1 { font-size: 14px; margin: 0 8px 0 0; font-weight: 600; }
+      h1 span { color: #9aa0a8; font-weight: 400; }
+      fieldset { border: none; margin: 0; padding: 0; display: flex; gap: 8px; align-items: center; }
+      label { font-size: 12px; display: inline-flex; gap: 4px; align-items: center; }
+      button { font-size: 12px; }
+      #slider { width: 200px; }
+      #slider-value, #tracking-values { color: #9aa0a8; font-variant-numeric: tabular-nums; }
+      #camera-video { width: 120px; border-radius: 4px; transform: scaleX(-1); }
+      #stage { display: grid; place-items: center; padding: 16px; }
+      #stage canvas { max-width: 100%; height: auto; border: 1px solid #2a2d33; }
+      #status { font-size: 12px; color: #9aa0a8; padding: 0 16px 12px; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>mabataki <span>v0.0.1 runtime viewer</span></h1>
+      <label>
+        <span id="param-name">parameter</span>
+        <input id="slider" type="range" step="0.01" />
+        <span id="slider-value">0.00</span>
+      </label>
+      <label><input id="animate" type="checkbox" /> animate</label>
+      <fieldset>
+        <button id="camera">start camera</button>
+        <span id="tracking-values">camera off</span>
+        <video id="camera-video" muted playsinline hidden></video>
+      </fieldset>
+      <fieldset>
+        <label>model <input id="model-input" type="file" accept="application/json,.json" /></label>
+        <label>textures <input id="texture-input" type="file" accept="image/*" multiple /></label>
+        <button id="load-files">load files</button>
+      </fieldset>
+      <a href="/">editor</a>
+    </header>
+    <div id="stage"></div>
+    <p id="status">loading bundled model…</p>
+    <script type="module" src="/demo/viewer.ts"></script>
+  </body>
+</html>
