@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "@mabataki/core": ["../../packages/core/src/index.ts"],
+      "@mabataki/mediapipe": ["../../packages/mediapipe/src/index.ts"],
+      "@mabataki/pixi": ["../../packages/pixi/src/index.ts"],
+      "@mabataki/web": ["../../packages/web/src/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

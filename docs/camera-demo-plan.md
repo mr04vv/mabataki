@@ -1,5 +1,8 @@
 # カメラ連動デモ 実装方針
 
+> Historical plan: paths below describe the pre-workspace layout. Current
+> package locations are defined by [ADR-0018](adr/0018-pnpm-workspace-package-boundaries.md).
+
 > 対象リポジトリ: `mabataki` / 前提知識ゼロの実装エージェント向け
 > 作成日: 2026-08-16
 

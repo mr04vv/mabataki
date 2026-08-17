@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>mabataki — camera compositor</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: #14161a; color: #e8e8ea; }
+      header { padding: 12px 16px; border-bottom: 1px solid #2a2d33; display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; }
+      h1 { font-size: 14px; margin: 0 8px 0 0; font-weight: 600; }
+      h1 span { color: #9aa0a8; font-weight: 400; }
+      label { font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+      fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+      button, select { font-size: 12px; }
+      input[type='range'] { width: 90px; }
+      output { min-width: 4ch; color: #9aa0a8; font-variant-numeric: tabular-nums; }
+      nav { display: flex; gap: 10px; font-size: 12px; }
+      #stage { display: grid; place-items: center; padding: 16px; }
+      #stage canvas { width: min(100%, 960px); height: auto; border: 1px solid #2a2d33; border-radius: 8px; }
+      #status { font-size: 12px; color: #9aa0a8; padding: 0 16px 6px; margin: 0; }
+      #hint { font-size: 12px; color: #737a85; padding: 0 16px 16px; margin: 0; }
+      #camera-video { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>mabataki <span>camera compositor</span></h1>
+      <label>mode
+        <select id="mode">
+          <option value="accessory">camera + accessory</option>
+          <option value="avatar-overlay">camera + avatar</option>
+          <option value="avatar-background">avatar behind person</option>
+        </select>
+      </label>
+      <fieldset>
+        <label>X <input id="placement-x" type="range" min="-40" max="40" step="1" value="0" />
+          <output id="placement-x-value">0%</output></label>
+        <label>Y <input id="placement-y" type="range" min="-40" max="40" step="1" value="0" />
+          <output id="placement-y-value">0%</output></label>
+        <label>size <input id="placement-scale" type="range" min="0.4" max="2.5" step="0.05" value="1" />
+          <output id="placement-scale-value">1.00×</output></label>
+        <button id="placement-reset" type="button">reset position</button>
+      </fieldset>
+      <button id="camera">start camera</button>
+      <label><input id="show-face-mesh" type="checkbox" /> show face mesh</label>
+      <nav><a href="/">editor</a><a href="/viewer.html">runtime viewer</a></nav>
+      <video id="camera-video" muted playsinline></video>
+    </header>
+    <div id="stage"></div>
+    <p id="status">loading model…</p>
+    <p id="hint">The camera image is mirrored. Camera placement and segmentation stay outside the Mabataki runtime.</p>
+    <script type="module" src="/src/camera.ts"></script>
+  </body>
+</html>

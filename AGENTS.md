@@ -2,28 +2,31 @@
 
 ## Project Structure & Module Organization
 
-`src/` contains the renderer-agnostic TypeScript core: model validation, mesh generation, parameter state, and deformation. Public exports belong in `src/index.ts`. Unit tests are colocated with their modules as `src/*.test.ts`. The browser-based proof-of-concept lives in `demo/`, with `index.html` as the Vite entry point. Generated production output goes to `dist/`; do not edit it by hand. Keep PixiJS and browser-specific code in the demo so the core remains dependency-free.
+This repository is a pnpm workspace. `packages/core/` contains the dependency-free, renderer-agnostic Runtime and is the only currently publishable package. `packages/mediapipe/` owns tracking and segmentation, `packages/pixi/` converts Core vertex buffers into PixiJS meshes, and `packages/web/` contains thin browser-stream helpers. `apps/demo/` contains the Editor, Runtime Viewer, Camera Compositor, and `public/models/` sample assets. Keep tests beside implementations as `*.test.ts`. Never edit generated `packages/*/dist/` or `apps/demo/dist/` files.
+
+Dependencies must point inward: applications may compose every package; `pixi` may depend on `core`; `core` must not import MediaPipe, PixiJS, DOM rendering, camera, or WebRTC code.
 
 ## Build, Test, and Development Commands
 
-Use pnpm and keep `pnpm-lock.yaml` in sync with dependency changes.
+Use pnpm and keep `pnpm-lock.yaml` synchronized.
 
-- `pnpm install` installs dependencies.
-- `pnpm dev` starts the Vite development server and interactive editor.
-- `pnpm test` runs the Vitest suite once.
-- `pnpm typecheck` checks strict TypeScript without emitting files.
-- `pnpm build` type-checks, then creates the production demo in `dist/`.
+- `pnpm install` installs and links all workspace packages.
+- `pnpm dev` builds packages, then starts the demo Vite server.
+- `pnpm test` builds packages and runs every Vitest suite.
+- `pnpm typecheck` checks every package independently.
+- `pnpm build` emits package libraries and the production demo.
+- `pnpm --filter @mabataki/core test -- src/deform.test.ts` runs one focused suite.
 
-Before submitting changes, run `pnpm test` and `pnpm build`.
+Run `pnpm test` and `pnpm build` before submitting changes.
 
 ## Coding Style & Naming Conventions
 
-Follow the existing TypeScript style: two-space indentation, single quotes, no semicolons, and trailing commas in multiline constructs. Use `camelCase` for functions and variables, `PascalCase` for interfaces and types, and descriptive lowercase filenames such as `deform.ts`. Keep exported APIs typed explicitly and preserve the strict settings in `tsconfig.json`. There is no separate formatter or linter; match neighboring code and let the type checker catch structural issues.
+Use two-space indentation, single quotes, no semicolons, and trailing commas in multiline constructs. Use `camelCase` for values and functions, `PascalCase` for types and classes, and descriptive lowercase filenames such as `accessory-tracking.ts`. Export package APIs only through each package's `src/index.ts`. Keep strict TypeScript settings and avoid cross-package relative imports.
 
 ## Testing Guidelines
 
-Tests use Vitest with `describe`, `it`, and `expect` in the Node environment. Name tests `<module>.test.ts` beside the implementation. Cover normal behavior, boundary values, malformed model input, and interpolation edge cases. Bug fixes should include a regression test that fails without the fix. Run a focused test while iterating, for example `pnpm test -- src/deform.test.ts`, then run the full suite.
+Tests use Vitest in the Node environment. Cover normal behavior, boundaries, malformed input, and interpolation edge cases. Every bug fix should include a regression test. Package-specific behavior belongs in that package; integration tests and bundled-model checks belong in `apps/demo/src/`.
 
 ## Commit & Pull Request Guidelines
 
-The repository has no commit history yet. Use short, imperative commit subjects such as `Add smile parameter interpolation`; keep each commit focused. Pull requests should explain the motivation and behavior change, list validation commands run, and link relevant issues. Include screenshots or a short recording for changes to the editor or rendering output. Call out model-format or public API changes explicitly and update `README.md` when user-facing behavior changes.
+Use short imperative subjects such as `Split runtime into workspace packages`. Keep commits focused. Pull requests should explain motivation, package-boundary or public-API changes, validation commands, and linked issues. Include screenshots or recordings for Editor, Viewer, or Camera Compositor changes.

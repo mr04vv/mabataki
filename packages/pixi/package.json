@@ -1,0 +1,26 @@
+{
+  "name": "@mabataki/pixi",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "PixiJS renderer for Mabataki avatars",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mabataki/core": "workspace:*",
+    "pixi.js": "^8.19.0"
+  }
+}

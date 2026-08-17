@@ -1,19 +1,17 @@
 {
-  "name": "mabataki",
+  "name": "mabataki-workspace",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Web-native 2D head avatar runtime for real-time communication (PoC)",
+  "description": "Web-native 2D avatar runtime workspace",
   "license": "MIT",
+  "packageManager": "pnpm@10.31.0",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@mediapipe/tasks-vision": "^1.0.1",
-    "pixi.js": "^8.19.0"
+    "dev": "pnpm build:packages && pnpm --filter @mabataki/demo dev",
+    "build:packages": "pnpm --filter './packages/**' build",
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm build:packages && pnpm -r --if-present test",
+    "typecheck": "pnpm build:packages && pnpm -r --if-present typecheck"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

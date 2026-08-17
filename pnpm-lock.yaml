@@ -7,13 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@mediapipe/tasks-vision':
-        specifier: ^1.0.1
-        version: 1.0.1
-      pixi.js:
-        specifier: ^8.19.0
-        version: 8.19.0
     devDependencies:
       typescript:
         specifier: ^7.0.2
@@ -24,6 +17,43 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(vite@8.2.1)
+
+  apps/demo:
+    dependencies:
+      '@mabataki/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@mabataki/mediapipe':
+        specifier: workspace:*
+        version: link:../../packages/mediapipe
+      '@mabataki/pixi':
+        specifier: workspace:*
+        version: link:../../packages/pixi
+      '@mabataki/web':
+        specifier: workspace:*
+        version: link:../../packages/web
+      pixi.js:
+        specifier: ^8.19.0
+        version: 8.19.0
+
+  packages/core: {}
+
+  packages/mediapipe:
+    dependencies:
+      '@mediapipe/tasks-vision':
+        specifier: ^1.0.1
+        version: 1.0.1
+
+  packages/pixi:
+    dependencies:
+      '@mabataki/core':
+        specifier: workspace:*
+        version: link:../core
+      pixi.js:
+        specifier: ^8.19.0
+        version: 8.19.0
+
+  packages/web: {}
 
 packages:
 

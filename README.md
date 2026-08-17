@@ -1,9 +1,19 @@
 # mabataki
 
-**mabataki** (瞬き, "blink") is a proof-of-concept, web-native 2D head avatar
-runtime aimed at real-time communication (video calls). It animates
+**A lightweight, web-first, headless runtime for parameter-driven 2D avatars.**
+
+Mabataki turns tracker-agnostic parameters such as `mouthOpen` and `headYaw`
+into deformed vertex buffers. Authoring tools, face trackers, and renderers stay
+outside the dependency-free core, so applications can replace each of them
+without changing the model execution path. The project deliberately targets a
+smaller surface than a general-purpose puppet or animation ecosystem: portable
+2D avatars embedded in browsers, real-time communication, and multi-avatar
+applications.
+
+**mabataki** (瞬き, "blink") is currently a proof of concept. It animates
 human-authored artwork by interpolating between key poses — it does **not**
-auto-rig anything.
+auto-rig anything. See [ADR-0015](docs/adr/0015-web-first-minimal-runtime.md)
+for the positioning and alternatives behind this scope.
 
 > Status: **v0.0.1 PoC** — a parameter-driven runtime and key-pose editor with
 > multi-part head pose, mouth, and independent blink tracking demos.
@@ -15,8 +25,9 @@ pnpm install
 pnpm dev
 ```
 
-Open the printed URL. The bundled character loads as `face`, `eyes`, and
-`mouth` parts:
+Open the printed URL. The bundled character loads as `face`, `eyes`, `glasses`,
+and `mouth` parts. The glasses demonstrate an accessory that follows head pose
+without inheriting blink deformation:
 
 1. Select a **part**, **parameter**, and **key pose**. For `headYaw`, the keys
    are `-1`, `0`, and `1`.
@@ -46,14 +57,33 @@ smooths their values between frames. Camera processing
 runs locally; the MediaPipe WASM and face model are fetched when tracking starts.
 
 Open `/viewer.html` for the data-driven runtime demo. Unlike the editor, the
-viewer fetches `public/models/character/model.json` and its PNGs at runtime. Use its
-file inputs to load another model together with every texture file referenced
-by that model.
+viewer fetches `apps/demo/public/models/character/model.json` and its texture files at
+runtime. Use its file inputs to load another model together with every texture
+file referenced by that model.
+
+Open `/camera.html` for the camera compositor. It provides three deliberately
+separate examples: glasses attached directly to the tracked face, the animated
+avatar over the camera image, and the animated avatar behind a segmented person.
+The first two use face position and size from the adapter; the background mode
+adds MediaPipe Image Segmenter only in the compositor. This keeps image masking,
+camera placement, and scene layout out of the headless runtime.
+
+### Accessory sizing
+
+Author accessories on the same canvas as the character so their neutral size
+and position line up without runtime offsets. The bundled glasses use a
+four-vertex mesh and bind only to `headYaw` and `headRoll`, so they follow the
+head without inheriting blink deformation. Camera tracking calibrates the first
+detected face width as scale `1`. Enable **follow camera** to smoothly scale the
+renderer's root container as the user moves closer or farther away; leave it
+off to keep the avatar framing fixed while expressions continue tracking. The
+MediaPipe adapter returns runtime parameters and this view transform separately,
+keeping global camera placement outside the vertex-deformation core.
 
 ```sh
-pnpm test        # core unit tests (vitest)
-pnpm typecheck   # tsc --noEmit
-pnpm build       # typecheck + vite build of the demo
+pnpm test        # all workspace tests (Vitest)
+pnpm typecheck   # strict TypeScript checks per package
+pnpm build       # packages, then the production demo
 ```
 
 ## Concept
@@ -80,7 +110,7 @@ The renderer-independent API validates a model, owns parameter state, and
 returns reusable deformed-vertex buffers:
 
 ```ts
-import { loadModel, MabatakiRuntime } from './src/index'
+import { loadModel, MabatakiRuntime } from '@mabataki/core'
 
 const model = await loadModel('/models/character/model.json')
 const runtime = new MabatakiRuntime(model)
@@ -148,18 +178,36 @@ hypothesis holds.
 
 ## Layout
 
-- `src/` — renderer-agnostic core: model schema + validation, grid mesh
-  generation, piecewise keyframe deformation, parameter store. Zero
-  dependencies; unit-tested.
-- `demo/` + `index.html` — the Phase 0 authoring/preview editor, built on
-  PixiJS v8 (the only runtime dependency, demo-side).
-- `viewer.html` — a data-driven consumer of the public Runtime API.
-- `public/models/` — example model JSON and texture assets loaded by the viewer.
+- `packages/core/` — publishable `@mabataki/core`: model validation, parameter
+  state, deformation, physics, and smoothing. It has zero package dependencies.
+- `packages/mediapipe/` — optional tracking, calibration, landmarks, and person segmentation.
+- `packages/pixi/` — reusable PixiJS mesh renderer for Core vertex buffers.
+- `packages/web/` — browser helpers for Canvas capture and microphone-track composition.
+- `apps/demo/` — Editor, Runtime Viewer, Camera Compositor, and sample model assets.
+- `docs/adr/` — architecture decision records: why the design is the way it is.
+
+The dependency direction is one-way: applications compose optional packages,
+while `@mabataki/core` never imports a tracker, renderer, or WebRTC integration.
+See [ADR-0018](docs/adr/0018-pnpm-workspace-package-boundaries.md).
+
+## Product integration
+
+Render an avatar with `@mabataki/core` and `@mabataki/pixi`, then pass the
+Canvas stream to the product's existing WebRTC stack. `@mabataki/web` does not
+own signaling or rooms; it only prepares browser media streams.
+
+```ts
+import { captureCanvasStream, combineWithAudio } from '@mabataki/web'
+
+const video = captureCanvasStream(canvas, 30)
+const outgoing = combineWithAudio(video, microphoneStream)
+```
 
 ## Roadmap
 
 mouth → head yaw/roll + multi-part authoring → independent blink →
-head pitch → gaze + clipping → spring-driven hair/ear assets →
+accessories + camera-space scale → head pitch → gaze + clipping → position →
+spring-driven hair/ear assets →
 `canvas.captureStream()` / WebRTC → multi-avatar benchmarks → authoring polish.
 
 ## Non-goals
