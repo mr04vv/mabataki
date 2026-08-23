@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>mabataki — AI call participant</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: #0e1118; color: #eceff4; }
+      header { padding: 14px 18px; border-bottom: 1px solid #2b3140; display: flex; gap: 16px; align-items: center; }
+      h1 { margin: 0; font-size: 15px; }
+      h1 span, .muted { color: #9da7b7; font-weight: 400; }
+      a { color: #8bc7ff; }
+      main { max-width: 1180px; margin: 0 auto; padding: 20px; }
+      .call-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+      .tile { position: relative; min-height: 230px; overflow: hidden; border: 1px solid #303849; border-radius: 14px; background: #171c27; display: grid; place-items: center; }
+      .tile.ai { border-color: #5865f2; box-shadow: 0 0 0 1px rgb(88 101 242 / 25%); }
+      .tile canvas, .tile video { width: 100%; height: 100%; object-fit: contain; }
+      .tile video { background: #111620; }
+      .badge { position: absolute; left: 10px; bottom: 10px; z-index: 2; padding: 5px 8px; border-radius: 999px; background: rgb(8 11 17 / 78%); font-size: 12px; }
+      .avatar-placeholder { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; background: #2b3446; font-size: 24px; }
+      .panel { margin-top: 16px; padding: 16px; border: 1px solid #303849; border-radius: 14px; background: #151a24; }
+      .controls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; }
+      label { display: grid; gap: 5px; font-size: 12px; color: #b8c0cd; }
+      textarea { width: min(520px, 80vw); min-height: 66px; resize: vertical; font: inherit; padding: 9px; color: inherit; background: #0f131b; border: 1px solid #394256; border-radius: 8px; }
+      input[type='file'] { max-width: 250px; }
+      button { min-height: 36px; padding: 0 13px; color: inherit; background: #293246; border: 1px solid #44506a; border-radius: 8px; cursor: pointer; }
+      button.primary { background: #5865f2; border-color: #6975ff; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .meter { width: 140px; height: 8px; overflow: hidden; border-radius: 99px; background: #29303d; }
+      #mouth-meter { width: 0; height: 100%; background: #65d6ad; transition: width 35ms linear; }
+      #status { margin: 10px 0 0; font-size: 12px; color: #9da7b7; }
+      .notes { font-size: 13px; line-height: 1.55; color: #b8c0cd; }
+      code { color: #9ad5ff; }
+      @media (max-width: 780px) { .call-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>mabataki <span>AI call participant</span></h1>
+      <a href="/">editor</a>
+      <a href="/viewer.html">runtime viewer</a>
+      <a href="/camera.html">camera compositor</a>
+      <a href="/motion.html">motion lab</a>
+    </header>
+    <main>
+      <section class="call-grid" aria-label="call participants">
+        <article class="tile ai">
+          <div id="stage"></div>
+          <span class="badge">Mabataki AI · source canvas</span>
+        </article>
+        <article class="tile">
+          <video id="remote-video" autoplay playsinline></video>
+          <span class="badge">WebRTC receiver</span>
+        </article>
+        <article class="tile">
+          <div class="avatar-placeholder">TM</div>
+          <span class="badge">Human participant · mock</span>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="controls">
+          <label>
+            AI reply
+            <textarea id="reply">こんにちは。Mabatakiの仮想参加者として会話に参加しています。</textarea>
+          </label>
+          <label>
+            TTS audio (optional)
+            <input id="audio-file" type="file" accept="audio/*" />
+          </label>
+          <label>
+            motion
+            <select id="motion-preset">
+              <option value="grounded">grounded</option>
+              <option value="hover">hover</option>
+              <option value="balloon" selected>balloon</option>
+              <option value="ghost">ghost</option>
+              <option value="lively">lively</option>
+            </select>
+            <span id="motion-description" class="muted"></span>
+          </label>
+          <button id="start-call" class="primary">start virtual participant</button>
+          <button id="speak" disabled>speak reply</button>
+          <div>
+            <span class="muted">mouthOpen</span>
+            <div class="meter"><div id="mouth-meter"></div></div>
+          </div>
+        </div>
+        <p id="status">Loading model…</p>
+      </section>
+
+      <section class="panel notes">
+        The built-in voice is a local mock TTS signal so this page needs no API key.
+        Select an audio file to test real TTS output. The same audio signal drives
+        <code>mouthOpen</code> and is combined with the captured Canvas before being sent
+        through a local WebRTC connection. A production room replaces only the local
+        connection with its SFU SDK.
+      </section>
+    </main>
+    <script type="module" src="/src/ai-call.ts"></script>
+  </body>
+</html>

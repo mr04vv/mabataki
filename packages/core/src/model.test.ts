@@ -33,6 +33,19 @@ describe('validateModel', () => {
     expect(validateModel(model)).toBe(model)
   })
 
+  it('accepts a finite model-space origin', () => {
+    const model = makeModel()
+    model.origin = { x: 25, y: 75 }
+    expect(validateModel(model)).toBe(model)
+  })
+
+  it('rejects a malformed model-space origin', () => {
+    expect(() => validateModel({
+      ...makeModel(),
+      origin: { x: Number.POSITIVE_INFINITY, y: 50 },
+    })).toThrow(/origin/)
+  })
+
   it('rejects an unsupported version', () => {
     expect(() => validateModel({ ...makeModel(), version: 2 })).toThrow(/version/)
   })
@@ -114,5 +127,72 @@ describe('validateModel', () => {
       weights: [2],
     }]
     expect(() => validateModel(invalidWeights)).toThrow(/weights/)
+  })
+
+  it('accepts hierarchy, rigid key poses, transform springs, and masks', () => {
+    const model = makeModel()
+    model.parts.push({
+      id: 'eyelid',
+      texture: 'eyelid.png',
+      parentId: 'mouth',
+      maskId: 'mouth',
+      transform: { x: 10, y: 20, pivotX: 4, pivotY: 5 },
+      mesh: structuredClone(model.parts[0].mesh),
+      bindings: [],
+      transformBindings: [{
+        parameterId: 'mouthOpen',
+        keyframes: [
+          { value: 0, transform: {} },
+          { value: 1, transform: { y: 12, rotation: 0.1 } },
+        ],
+      }],
+      transformSpringBindings: [{
+        source: { kind: 'parent', property: 'rotation' },
+        property: 'rotation',
+        frequencyHz: 3,
+        dampingRatio: 0.7,
+        scale: 0.5,
+      }],
+    })
+
+    expect(validateModel(model)).toBe(model)
+  })
+
+  it('rejects invalid hierarchy and mask references', () => {
+    const missingParent = makeModel()
+    missingParent.parts[0].parentId = 'missing'
+    expect(() => validateModel(missingParent)).toThrow(/parentId/)
+
+    const missingMask = makeModel()
+    missingMask.parts[0].maskId = 'missing'
+    expect(() => validateModel(missingMask)).toThrow(/maskId/)
+
+    const cycle = makeModel()
+    cycle.parts.push({
+      ...structuredClone(cycle.parts[0]),
+      id: 'child',
+      parentId: 'mouth',
+    })
+    cycle.parts[0].parentId = 'child'
+    expect(() => validateModel(cycle)).toThrow(/cycle/)
+  })
+
+  it('rejects malformed rigid transform data', () => {
+    const invalidKeyframe = makeModel()
+    invalidKeyframe.parts[0].transformBindings = [{
+      parameterId: 'mouthOpen',
+      keyframes: [{ value: 0, transform: { x: Number.NaN } }],
+    }]
+    expect(() => validateModel(invalidKeyframe)).toThrow(/finite/)
+
+    const invalidSpring = makeModel()
+    invalidSpring.parts[0].transformSpringBindings = [{
+      source: { kind: 'parent', property: 'x' },
+      property: 'x',
+      frequencyHz: 2,
+      dampingRatio: 0.7,
+      scale: 1,
+    }]
+    expect(() => validateModel(invalidSpring)).toThrow(/parentId/)
   })
 })

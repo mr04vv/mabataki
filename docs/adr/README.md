@@ -23,9 +23,12 @@ mabataki の設計上の意思決定を、背景・決定・影響・却下し�
 | [0013](0013-local-only-camera-processing.md) | カメラ映像はローカルでのみ処理し、ネットワークに出さない | 2026-08-16 | Accepted |
 | [0014](0014-editor-features-on-demand.md) | エディタ機能は必要性が実証された時点で追加する | 2026-08-17 | Accepted |
 | [0015](0015-web-first-minimal-runtime.md) | Web-first の最小 Headless Runtime として独立実装する | 2026-08-17 | Accepted |
-| [0016](0016-occlusion-with-parts-and-masks.md) | 遮蔽表現は別 Part + Clip Mask で作る | 2026-08-17 | Proposed |
+| [0016](0016-occlusion-with-parts-and-masks.md) | 遮蔽表現は別 Part + Clip Mask で作る | 2026-08-17 | Accepted |
 | [0017](0017-camera-space-transform-outside-runtime.md) | カメラ空間の配置はRuntime外で適用する | 2026-08-17 | Accepted |
 | [0018](0018-pnpm-workspace-package-boundaries.md) | pnpm workspaceでRuntime・Adapter・Renderer・Web統合を分離する | 2026-08-17 | Accepted |
+| [0019](0019-declarative-motion-clips.md) | 自動Motionは宣言的Clipを合成し、ParameterとRoot Motionを分離する | 2026-08-22 | Accepted |
+| [0020](0020-compose-parameter-sources-before-runtime.md) | 複数のParameter入力はRuntimeの前で所有範囲を指定して合成する | 2026-08-23 | Accepted |
+| [0021](0021-part-hierarchy-and-transform-springs.md) | 剛体Partは階層Transformで接続し、親とRootの遅れをSpringで表す | 2026-08-23 | Accepted |
 
 ## この記録から読み取れる設計の芯
 

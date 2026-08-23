@@ -39,4 +39,10 @@ export class ParameterStore {
   values(): Record<string, number> {
     return Object.fromEntries(this.current)
   }
+
+  reset(): void {
+    for (const [id, definition] of this.defs) {
+      this.current.set(id, definition.default)
+    }
+  }
 }

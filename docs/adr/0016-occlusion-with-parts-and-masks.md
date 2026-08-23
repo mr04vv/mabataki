@@ -1,6 +1,6 @@
 # ADR-0016: 遮蔽表現は別 Part + Clip Mask で作る
 
-- ステータス: Proposed
+- ステータス: Accepted
 - 日付: 2026-08-17
 - 関連: [ADR-0005](0005-pixijs-renderer.md), [ADR-0008](0008-rigid-parts-as-separate-parts.md), [ADR-0014](0014-editor-features-on-demand.md)
 
@@ -13,7 +13,7 @@
 ここで必要なのは変形だけではなく「上まぶたが白目を覆う」という遮蔽関係である。同じ Texture と
 Mesh に描かれたピクセル同士では、一方だけを他方の前へ移動して隠すことができない。
 
-## 提案
+## 決定
 
 遮蔽を伴う表情は、意味の異なる画像を別 `part` に分け、遮蔽物へ Clip Mask を適用する。
 Blink の最小構成は次とする。
@@ -28,7 +28,8 @@ eye base (white / pupil)
 - まぶた画像は目より大きくてよい。目の内側を表す Mask から外れたピクセルは Renderer が捨てる
 - 輪郭を最前面に描画し、Mask 境界やアンチエイリアスの継ぎ目を隠す
 - Runtime は引き続き頂点と Parameter を評価するだけとし、Mask の適用は Renderer の責務にする
-- Model Format の Mask 参照方法と PixiJS での実装を検証してから Accepted に変更する
+- Clip対象Partの`maskId`からMask用Partを参照する
+- `@mabataki/pixi`は参照先MeshをGeometry Maskとして接続し、Coreは参照の妥当性だけを検証する
 
 ## 期待される影響
 

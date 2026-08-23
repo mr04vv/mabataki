@@ -16,7 +16,7 @@ auto-rig anything. See [ADR-0015](docs/adr/0015-web-first-minimal-runtime.md)
 for the positioning and alternatives behind this scope.
 
 > Status: **v0.0.1 PoC** — a parameter-driven runtime and key-pose editor with
-> multi-part head pose, mouth, and independent blink tracking demos.
+> head pose, mouth, and independent blink tracking demos.
 
 ## Quick start
 
@@ -25,9 +25,8 @@ pnpm install
 pnpm dev
 ```
 
-Open the printed URL. The bundled character loads as `face`, `eyes`, `glasses`,
-and `mouth` parts. The glasses demonstrate an accessory that follows head pose
-without inheriting blink deformation:
+Open the printed URL. The bundled `man_55.png` character loads as one `face`
+part whose mesh contains head pose, mouth, and independent blink bindings:
 
 1. Select a **part**, **parameter**, and **key pose**. For `headYaw`, the keys
    are `-1`, `0`, and `1`.
@@ -63,22 +62,28 @@ file referenced by that model.
 
 Open `/camera.html` for the camera compositor. It provides three deliberately
 separate examples: glasses attached directly to the tracked face, the animated
-avatar over the camera image, and the animated avatar behind a segmented person.
-The first two use face position and size from the adapter; the background mode
-adds MediaPipe Image Segmenter only in the compositor. This keeps image masking,
-camera placement, and scene layout out of the headless runtime.
+avatar over the camera image, and the animated avatar over any uploaded background.
+The background mode works without a camera; starting the camera adds expression
+tracking without drawing the user or their room. Background selection, camera
+placement, and scene layout all stay outside the headless runtime.
+
+Open `/motion.html` to compare the `grounded`, `floating`, and `lively` motion
+rules side by side, including the named `hover`, `balloon`, and `ghost` floating
+styles. All use the same Core `MotionMixer`; only their declarative clips differ.
+`/ai-call.html` defaults to `balloon` and lets you select every style alongside
+audio-driven mouth movement.
 
 ### Accessory sizing
 
-Author accessories on the same canvas as the character so their neutral size
-and position line up without runtime offsets. The bundled glasses use a
-four-vertex mesh and bind only to `headYaw` and `headRoll`, so they follow the
-head without inheriting blink deformation. Camera tracking calibrates the first
-detected face width as scale `1`. Enable **follow camera** to smoothly scale the
-renderer's root container as the user moves closer or farther away; leave it
-off to keep the avatar framing fixed while expressions continue tracking. The
-MediaPipe adapter returns runtime parameters and this view transform separately,
-keeping global camera placement outside the vertex-deformation core.
+The camera compositor loads `glasses.svg` as a standalone tracked accessory;
+it is not part of the bundled avatar model. Avatar parts should normally share
+one canvas coordinate system so their neutral positions align without runtime
+offsets. Camera tracking calibrates the first detected face width as scale `1`.
+Enable **follow camera** to smoothly scale the renderer's root container as the
+user moves closer or farther away; leave it off to keep the avatar framing fixed
+while expressions continue tracking. The MediaPipe adapter returns runtime
+parameters and this view transform separately, keeping global camera placement
+outside the vertex-deformation core.
 
 ```sh
 pnpm test        # all workspace tests (Vitest)
@@ -123,6 +128,74 @@ const positions = runtime.getPartVertices('face')
 Unknown update parameters are ignored so tracker output can be passed through
 directly. Declared parameters are clamped to their model ranges. Treat the
 returned `Float32Array` as read-only: the runtime reuses it on later updates.
+Use `runtime.reset()` when replacing an input session, or `resetPhysics()` to
+clear secondary-motion velocity while preserving the current parameters.
+
+Compose independent inputs explicitly before updating the runtime:
+
+```ts
+import { ParameterComposer } from '@mabataki/core'
+
+const composer = new ParameterComposer(model.parameters)
+runtime.update(composer.compose([
+  { id: 'tracking', values: tracking, include: ['headYaw', 'headRoll'] },
+  { id: 'voice', values: { mouthOpen }, include: ['mouthOpen'] },
+  { id: 'idle', values: idleParameters, blend: 'additive', weight: 0.2 },
+]))
+```
+
+## Automatic motion
+
+`MotionMixer` samples serializable clips without importing a renderer or owning
+the animation clock. Parameter tracks drive authored key poses; root tracks
+describe whole-avatar translation, rotation, and scale for the renderer to apply.
+
+Common motion rules have typed factories. Their output is ordinary Motion Layer
+data and can be mixed with fully custom clips:
+
+```ts
+import { createFloatingMotion, MotionMixer } from '@mabataki/core'
+
+const mixer = new MotionMixer(createFloatingMotion({
+  amplitudeX: 12,
+  amplitudeY: 30,
+  periodMs: 4000,
+  rotation: 0.018,
+  breathing: 0.01,
+  weight: 0.8,
+  speed: 1.1,
+}))
+```
+
+```ts
+import { MotionMixer } from '@mabataki/core'
+
+const mixer = new MotionMixer([{
+  blend: 'additive',
+  clip: {
+    id: 'float',
+    durationMs: 2400,
+    loop: true,
+    tracks: [{
+      target: { kind: 'root', property: 'translateY' },
+      interpolation: 'smoothstep',
+      keyframes: [
+        { timeMs: 0, value: 0 },
+        { timeMs: 1200, value: -12 },
+        { timeMs: 2400, value: 0 },
+      ],
+    }],
+  },
+}])
+
+const motion = mixer.sample(elapsedMs, { mouthOpen: audioMouthOpen })
+runtime.update(motion.parameters)
+rendererRoot.y = neutralY + motion.root.translateY
+```
+
+Use Parameters for articulation, Root Motion for whole-character movement,
+Spring Bindings for delayed ears/hair/tails, and the tracker adapter's view
+transform for camera-space placement. See [ADR-0019](docs/adr/0019-declarative-motion-clips.md).
 
 ## Parameter contract (planned)
 
@@ -141,11 +214,16 @@ returned `Float32Array` as read-only: the runtime reuses it on later updates.
 ```jsonc
 {
   "version": 1,
-  "parameters": [{ "id": "mouthOpen", "min": 0, "max": 1, "default": 0 }],
+  "origin": { "x": 284.5, "y": 285 }, // optional root rotation/scale pivot
+  "parameters": [
+    { "id": "mouthOpen", "min": 0, "max": 1, "default": 0 },
+    { "id": "headYaw", "min": -1, "max": 1, "default": 0 }
+  ],
   "parts": [
     {
       "id": "mouth",
       "texture": "mouth.png",           // reference only; not bundled yet
+      "transform": { "x": 0, "y": 0, "pivotX": 50, "pivotY": 30 },
       "mesh": { "vertices": [/* x,y */], "uvs": [/* u,v */], "indices": [/* tris */] },
       "bindings": [
         {
@@ -156,14 +234,20 @@ returned `Float32Array` as read-only: the runtime reuses it on later updates.
           ]
         }
       ],
-      "springBindings": [
+      "transformBindings": [
         {
           "parameterId": "headYaw",
-          "frequencyHz": 2.2,
-          "dampingRatio": 0.58,
-          "scaleX": 28,
-          "scaleY": 5,
-          "weights": [/* one 0..1 influence per vertex */]
+          "keyframes": [
+            { "value": -1, "transform": { "x": -8, "rotation": -0.08 } },
+            { "value": 1, "transform": { "x": 8, "rotation": 0.08 } }
+          ]
+        }
+      ],
+      "transformSpringBindings": [
+        {
+          "source": { "kind": "root", "property": "translateY" },
+          "property": "y",
+          "frequencyHz": 2.2, "dampingRatio": 0.58, "scale": 0.35
         }
       ]
     }
@@ -171,8 +255,11 @@ returned `Float32Array` as read-only: the runtime reuses it on later updates.
 }
 ```
 
-Vertex positions and spring scales are in texture pixel space. Spring weights
-pin attachment vertices at `0` and give free tips full influence at `1`. A
+Vertex positions and transforms are in model space. `parentId` forms an acyclic
+rigid hierarchy; omitted transforms are identity. `maskId` references another
+Part used by the renderer as a geometry clip mask. Vertex `springBindings` remain
+available for weighted flexible meshes, while `transformSpringBindings` move a
+whole attached Part in response to a Parameter, parent transform, or Root Motion. A
 compact binary/packaged format is deliberately deferred until the quality
 hypothesis holds.
 
@@ -180,10 +267,10 @@ hypothesis holds.
 
 - `packages/core/` — publishable `@mabataki/core`: model validation, parameter
   state, deformation, physics, and smoothing. It has zero package dependencies.
-- `packages/mediapipe/` — optional tracking, calibration, landmarks, and person segmentation.
+- `packages/mediapipe/` — optional face tracking, calibration, landmarks, and accessory anchors.
 - `packages/pixi/` — reusable PixiJS mesh renderer for Core vertex buffers.
 - `packages/web/` — browser helpers for Canvas capture and microphone-track composition.
-- `apps/demo/` — Editor, Runtime Viewer, Camera Compositor, and sample model assets.
+- `apps/demo/` — Editor, Viewer, Camera Compositor, Motion Lab, AI participant preview, and assets.
 - `docs/adr/` — architecture decision records: why the design is the way it is.
 
 The dependency direction is one-way: applications compose optional packages,
@@ -208,7 +295,7 @@ const outgoing = combineWithAudio(video, microphoneStream)
 mouth → head yaw/roll + multi-part authoring → independent blink →
 accessories + camera-space scale → head pitch → gaze + clipping → position →
 spring-driven hair/ear assets →
-`canvas.captureStream()` / WebRTC → multi-avatar benchmarks → authoring polish.
+browser `MediaStream` output → multi-avatar benchmarks → authoring polish.
 
 ## Non-goals
 

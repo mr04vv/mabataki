@@ -14,8 +14,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
+        aiCall: localPath('ai-call.html'),
         camera: localPath('camera.html'),
         editor: localPath('index.html'),
+        motion: localPath('motion.html'),
         viewer: localPath('viewer.html'),
       },
     },

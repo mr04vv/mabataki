@@ -5,6 +5,12 @@ export interface ParameterDef {
   default: number
 }
 
+/** Model-space pivot used for whole-avatar rotation and scaling. */
+export interface ModelOrigin {
+  x: number
+  y: number
+}
+
 /**
  * Mesh deformation at one parameter value.
  * `deltas` is a flat [dx, dy, ...] offset list relative to the base vertices.
@@ -47,17 +53,74 @@ export interface SpringBinding {
   weights: number[]
 }
 
+/** Local transform relative to the parent part or avatar root. */
+export interface PartTransform {
+  x: number
+  y: number
+  rotation: number
+  scaleX: number
+  scaleY: number
+  pivotX: number
+  pivotY: number
+}
+
+export type PartTransformProperty = 'x' | 'y' | 'rotation' | 'scaleX' | 'scaleY'
+
+export interface PartTransformDelta {
+  x?: number
+  y?: number
+  rotation?: number
+  /** Additive difference from the base scale; 0 is neutral. */
+  scaleX?: number
+  /** Additive difference from the base scale; 0 is neutral. */
+  scaleY?: number
+}
+
+export interface PartTransformKeyframe {
+  value: number
+  transform: PartTransformDelta
+}
+
+/** Parameter-driven rigid transform key poses for a whole part. */
+export interface PartTransformBinding {
+  parameterId: string
+  keyframes: PartTransformKeyframe[]
+}
+
+export type TransformSpringSource =
+  | { kind: 'parameter'; id: string }
+  | { kind: 'root'; property: 'translateX' | 'translateY' | 'rotation' }
+  | { kind: 'parent'; property: 'x' | 'y' | 'rotation' }
+
+/** Adds delayed parent/root/parameter motion to a rigid part transform. */
+export interface TransformSpringBinding {
+  source: TransformSpringSource
+  property: 'x' | 'y' | 'rotation'
+  frequencyHz: number
+  dampingRatio: number
+  scale: number
+}
+
 export interface Part {
   id: string
   /** Texture reference (file name); resolution is up to the loader. */
   texture: string
+  /** Optional parent for rigid attachment. Must form an acyclic graph. */
+  parentId?: string
+  /** Neutral local transform. Omitted fields use the identity transform. */
+  transform?: Partial<PartTransform>
+  /** Optional part whose rendered alpha/geometry clips this part. */
+  maskId?: string
   mesh: MeshData
   bindings: Binding[]
+  transformBindings?: PartTransformBinding[]
   springBindings?: SpringBinding[]
+  transformSpringBindings?: TransformSpringBinding[]
 }
 
 export interface MabatakiModel {
   version: 1
+  origin?: ModelOrigin
   parameters: ParameterDef[]
   parts: Part[]
 }
@@ -74,6 +137,22 @@ function isNumberArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.every(isFiniteNumber)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+const TRANSFORM_FIELDS = [
+  'x',
+  'y',
+  'rotation',
+  'scaleX',
+  'scaleY',
+  'pivotX',
+  'pivotY',
+] as const
+
+const TRANSFORM_DELTA_FIELDS = ['x', 'y', 'rotation', 'scaleX', 'scaleY'] as const
+
 /**
  * Structurally validates untrusted model data (e.g. an imported JSON file)
  * and narrows it to `MabatakiModel`. Throws with a descriptive message.
@@ -82,6 +161,15 @@ export function validateModel(model: unknown): MabatakiModel {
   assert(typeof model === 'object' && model !== null, 'model must be an object')
   const m = model as Record<string, unknown>
   assert(m.version === 1, `unsupported version: ${String(m.version)}`)
+
+  if (m.origin !== undefined) {
+    assert(typeof m.origin === 'object' && m.origin !== null, 'origin must be an object')
+    const origin = m.origin as Record<string, unknown>
+    assert(
+      isFiniteNumber(origin.x) && isFiniteNumber(origin.y),
+      'origin x/y must be finite numbers',
+    )
+  }
 
   assert(Array.isArray(m.parameters), 'parameters must be an array')
   const parameterIds = new Set<string>()
@@ -104,12 +192,45 @@ export function validateModel(model: unknown): MabatakiModel {
   assert(Array.isArray(m.parts), 'parts must be an array')
   const partIds = new Set<string>()
   for (const raw of m.parts) {
-    assert(typeof raw === 'object' && raw !== null, 'each part must be an object')
+    assert(isRecord(raw), 'each part must be an object')
+    assert(typeof raw.id === 'string' && raw.id.length > 0, 'part id must be a non-empty string')
+    assert(!partIds.has(raw.id), `duplicate part "${raw.id}"`)
+    partIds.add(raw.id)
+  }
+
+  const parentByPart = new Map<string, string>()
+  for (const raw of m.parts) {
     const part = raw as Record<string, unknown>
-    assert(typeof part.id === 'string' && part.id.length > 0, 'part id must be a non-empty string')
-    assert(!partIds.has(part.id), `duplicate part "${part.id}"`)
-    partIds.add(part.id)
+    const partId = part.id as string
     assert(typeof part.texture === 'string', `part "${part.id}" texture must be a string`)
+
+    if (part.parentId !== undefined) {
+      assert(
+        typeof part.parentId === 'string' && partIds.has(part.parentId),
+        `part "${partId}" parentId must reference a declared part`,
+      )
+      assert(part.parentId !== partId, `part "${partId}" cannot parent itself`)
+      parentByPart.set(partId, part.parentId)
+    }
+
+    if (part.maskId !== undefined) {
+      assert(
+        typeof part.maskId === 'string' && partIds.has(part.maskId),
+        `part "${partId}" maskId must reference a declared part`,
+      )
+      assert(part.maskId !== partId, `part "${partId}" cannot mask itself`)
+    }
+
+    if (part.transform !== undefined) {
+      assert(isRecord(part.transform), `part "${partId}" transform must be an object`)
+      for (const field of TRANSFORM_FIELDS) {
+        const value = part.transform[field]
+        assert(
+          value === undefined || isFiniteNumber(value),
+          `part "${partId}" transform ${field} must be finite`,
+        )
+      }
+    }
 
     assert(typeof part.mesh === 'object' && part.mesh !== null, `part "${part.id}" mesh must be an object`)
     const mesh = part.mesh as Record<string, unknown>
@@ -158,6 +279,44 @@ export function validateModel(model: unknown): MabatakiModel {
       }
     }
 
+    if (part.transformBindings !== undefined) {
+      assert(
+        Array.isArray(part.transformBindings),
+        `part "${partId}" transformBindings must be an array`,
+      )
+      for (const rawBinding of part.transformBindings) {
+        assert(isRecord(rawBinding), 'each transform binding must be an object')
+        assert(
+          typeof rawBinding.parameterId === 'string' && parameterIds.has(rawBinding.parameterId),
+          `transform binding references undeclared parameter "${String(rawBinding.parameterId)}"`,
+        )
+        assert(
+          Array.isArray(rawBinding.keyframes) && rawBinding.keyframes.length > 0,
+          `transform binding "${rawBinding.parameterId}" keyframes must be non-empty`,
+        )
+        let previousValue = Number.NEGATIVE_INFINITY
+        for (const rawKeyframe of rawBinding.keyframes) {
+          assert(isRecord(rawKeyframe), 'each transform keyframe must be an object')
+          assert(
+            isFiniteNumber(rawKeyframe.value) && rawKeyframe.value > previousValue,
+            `transform binding "${rawBinding.parameterId}" keyframes must be sorted`,
+          )
+          assert(
+            isRecord(rawKeyframe.transform),
+            `transform binding "${rawBinding.parameterId}" transform must be an object`,
+          )
+          for (const field of TRANSFORM_DELTA_FIELDS) {
+            const value = rawKeyframe.transform[field]
+            assert(
+              value === undefined || isFiniteNumber(value),
+              `transform binding "${rawBinding.parameterId}" ${field} must be finite`,
+            )
+          }
+          previousValue = rawKeyframe.value
+        }
+      }
+    }
+
     if (part.springBindings !== undefined) {
       assert(Array.isArray(part.springBindings), `part "${part.id}" springBindings must be an array`)
       for (const rawSpring of part.springBindings) {
@@ -186,6 +345,66 @@ export function validateModel(model: unknown): MabatakiModel {
           `spring binding "${spring.parameterId}" weights must contain one 0..1 value per vertex`,
         )
       }
+    }
+
+    if (part.transformSpringBindings !== undefined) {
+      assert(
+        Array.isArray(part.transformSpringBindings),
+        `part "${partId}" transformSpringBindings must be an array`,
+      )
+      for (const rawSpring of part.transformSpringBindings) {
+        assert(isRecord(rawSpring), 'each transform spring binding must be an object')
+        assert(isRecord(rawSpring.source), 'transform spring source must be an object')
+        const source = rawSpring.source
+        if (source.kind === 'parameter') {
+          assert(
+            typeof source.id === 'string' && parameterIds.has(source.id),
+            `transform spring references undeclared parameter "${String(source.id)}"`,
+          )
+        } else if (source.kind === 'root') {
+          assert(
+            source.property === 'translateX' ||
+              source.property === 'translateY' ||
+              source.property === 'rotation',
+            `part "${partId}" transform spring has an unknown root property`,
+          )
+        } else {
+          assert(source.kind === 'parent', `part "${partId}" transform spring has an unknown source`)
+          assert(parentByPart.has(partId), `part "${partId}" parent spring requires parentId`)
+          assert(
+            source.property === 'x' || source.property === 'y' || source.property === 'rotation',
+            `part "${partId}" transform spring has an unknown parent property`,
+          )
+        }
+        assert(
+          rawSpring.property === 'x' ||
+            rawSpring.property === 'y' ||
+            rawSpring.property === 'rotation',
+          `part "${partId}" transform spring has an unknown target property`,
+        )
+        assert(
+          isFiniteNumber(rawSpring.frequencyHz) && rawSpring.frequencyHz > 0,
+          `part "${partId}" transform spring frequencyHz must be positive`,
+        )
+        assert(
+          isFiniteNumber(rawSpring.dampingRatio) && rawSpring.dampingRatio >= 0,
+          `part "${partId}" transform spring dampingRatio must be non-negative`,
+        )
+        assert(
+          isFiniteNumber(rawSpring.scale),
+          `part "${partId}" transform spring scale must be finite`,
+        )
+      }
+    }
+  }
+
+  for (const partId of partIds) {
+    const ancestors = new Set<string>([partId])
+    let parentId = parentByPart.get(partId)
+    while (parentId !== undefined) {
+      assert(!ancestors.has(parentId), `part hierarchy contains a cycle at "${parentId}"`)
+      ancestors.add(parentId)
+      parentId = parentByPart.get(parentId)
     }
   }
 

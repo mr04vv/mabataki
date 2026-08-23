@@ -45,8 +45,8 @@ let elapsedMs = 0
 let smoothers = new Map<string, ExponentialSmoother>()
 const viewScaleSmoother = new ExponentialSmoother(SMOOTHING_TIME_MS)
 
-function layoutWorld(width: number, height: number): void {
-  world.pivot.set(width / 2, height / 2)
+function layoutWorld(width: number, height: number, origin = { x: width / 2, y: height / 2 }): void {
+  world.pivot.set(origin.x, origin.y)
   world.position.set(MARGIN + width / 2, MARGIN + height / 2)
 }
 
@@ -93,7 +93,7 @@ async function showModel(model: MabatakiModel, textures: Texture[]): Promise<voi
   world.addChild(avatarRenderer.container)
   const width = Math.max(1, ...textures.map((texture) => texture.width))
   const height = Math.max(1, ...textures.map((texture) => texture.height))
-  layoutWorld(width, height)
+  layoutWorld(width, height, model.origin)
   resetViewScale()
   app.renderer.resize(width + MARGIN * 2, height + MARGIN * 2)
   smoothers = new Map(model.parameters.map((parameter) => [

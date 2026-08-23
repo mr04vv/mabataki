@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>mabataki — motion lab</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: #0e1118; color: #eceff4; }
+      header { padding: 14px 18px; border-bottom: 1px solid #2b3140; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+      h1 { margin: 0; font-size: 15px; }
+      h1 span { color: #9da7b7; font-weight: 400; }
+      a { color: #8bc7ff; }
+      main { max-width: 1180px; margin: 0 auto; padding: 20px; }
+      .intro { margin: 0 0 16px; color: #aeb7c6; line-height: 1.55; }
+      .controls { margin-bottom: 16px; padding: 13px 14px; border: 1px solid #303849; border-radius: 12px; background: #151a24; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
+      .controls strong { font-size: 13px; }
+      .controls label { display: grid; grid-template-columns: auto 150px 4ch; gap: 7px; align-items: center; color: #aeb7c6; font-size: 12px; }
+      .controls output { color: #69d6ae; font-variant-numeric: tabular-nums; text-align: right; }
+      .motion-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+      .section-title { margin: 24px 0 10px; font-size: 15px; }
+      article { overflow: hidden; border: 1px solid #303849; border-radius: 14px; background: #151a24; }
+      .stage { aspect-ratio: 1; display: grid; place-items: center; background: #171c27; }
+      .stage canvas { width: 100%; height: 100%; object-fit: contain; }
+      .copy { padding: 13px 14px 15px; border-top: 1px solid #303849; }
+      h2 { margin: 0 0 5px; font-size: 14px; }
+      p { margin: 0; }
+      .description { min-height: 3em; color: #aeb7c6; font-size: 12px; line-height: 1.5; }
+      .values { margin-top: 9px; color: #69d6ae; font: 11px ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+      @media (max-width: 780px) { .motion-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>mabataki <span>motion lab</span></h1>
+      <a href="/">editor</a>
+      <a href="/viewer.html">runtime viewer</a>
+      <a href="/ai-call.html">AI call participant</a>
+    </header>
+    <main>
+      <p class="intro">
+        The same renderer-independent MotionMixer drives three character rules.
+        Root movement stays separate from parameter-driven mesh deformation.
+      </p>
+      <h2 class="section-title">natural floating directions</h2>
+      <section class="motion-grid" aria-label="natural floating direction comparison">
+        <article data-floating-direction="hover">
+          <div class="stage"></div>
+          <div class="copy">
+            <h2>hover · recommended</h2>
+            <p class="description"></p>
+            <p class="values"></p>
+          </div>
+        </article>
+        <article data-floating-direction="balloon">
+          <div class="stage"></div>
+          <div class="copy">
+            <h2>balloon</h2>
+            <p class="description"></p>
+            <p class="values"></p>
+          </div>
+        </article>
+        <article data-floating-direction="ghost">
+          <div class="stage"></div>
+          <div class="copy">
+            <h2>ghost</h2>
+            <p class="description"></p>
+            <p class="values"></p>
+          </div>
+        </article>
+      </section>
+      <h2 class="section-title">base behavior playground</h2>
+      <section class="controls" aria-label="floating motion settings">
+        <strong>floating settings</strong>
+        <label>
+          horizontal
+          <input id="float-x" type="range" min="0" max="40" step="1" value="0" />
+          <output id="float-x-value">0</output>
+        </label>
+        <label>
+          vertical
+          <input id="float-y" type="range" min="0" max="60" step="1" value="14" />
+          <output id="float-y-value">14</output>
+        </label>
+        <label>
+          period
+          <input id="float-period" type="range" min="1000" max="8000" step="100" value="4200" />
+          <output id="float-period-value">4.2s</output>
+        </label>
+      </section>
+      <section class="motion-grid" aria-label="motion preset comparison">
+        <article data-motion="grounded">
+          <div class="stage"></div>
+          <div class="copy">
+            <h2>grounded</h2>
+            <p class="description"></p>
+            <p class="values"></p>
+          </div>
+        </article>
+        <article data-motion="floating">
+          <div class="stage"></div>
+          <div class="copy">
+            <h2>floating</h2>
+            <p class="description"></p>
+            <p class="values"></p>
+          </div>
+        </article>
+        <article data-motion="lively">
+          <div class="stage"></div>
+          <div class="copy">
+            <h2>lively</h2>
+            <p class="description"></p>
+            <p class="values"></p>
+          </div>
+        </article>
+      </section>
+    </main>
+    <script type="module" src="/src/motion-demo.ts"></script>
+  </body>
+</html>

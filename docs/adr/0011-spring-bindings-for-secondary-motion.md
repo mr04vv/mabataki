@@ -36,6 +36,10 @@
 - 物理を持たないモデルでは `step()` が即座に return するためコストがゼロ
 - 呼び出し側は毎フレーム `step()` を呼ぶ必要がある(物理を使わないなら省略可)
 
+その後[ADR-0021](0021-part-hierarchy-and-transform-springs.md)で、同じ積分規則を使う
+`transformSpringBindings`を追加した。こちらはParameterに加え、親Part Transformまたは
+外から渡されたRoot MotionをDriverにできる。
+
 ## 却下した代替案
 
 - **parent / pivot / 階層を持つ本格的なボーン機構**: 現時点の要求(接着面の固定 + 先端の遅れ)は

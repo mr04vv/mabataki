@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Texture } from 'pixi.js'
+import { Container, Texture } from 'pixi.js'
 import { MabatakiRuntime } from '@mabataki/core'
 import type { MabatakiModel } from '@mabataki/core'
 import { PixiAvatarRenderer } from './index'
@@ -39,5 +39,44 @@ describe('PixiAvatarRenderer', () => {
 
   it('rejects a texture count that does not match the model', () => {
     expect(() => new PixiAvatarRenderer(new MabatakiRuntime(model), [])).toThrow(/texture count/)
+  })
+
+  it('nests attached parts and applies their local transforms', () => {
+    const attached = structuredClone(model)
+    attached.parts.push({
+      ...structuredClone(model.parts[0]),
+      id: 'hat',
+      parentId: 'mouth',
+      transform: { x: 12, y: 7, rotation: 0.2 },
+    })
+    const renderer = new PixiAvatarRenderer(
+      new MabatakiRuntime(attached),
+      [Texture.EMPTY, Texture.EMPTY],
+    )
+    const rootPart = renderer.container.children[0] as Container
+    const childPart = rootPart.children[1] as Container
+
+    expect(renderer.container.children).toHaveLength(1)
+    expect(childPart.position.x).toBe(12)
+    expect(childPart.position.y).toBe(7)
+    expect(childPart.rotation).toBeCloseTo(0.2)
+    renderer.destroy()
+  })
+
+  it('connects a declared part mask', () => {
+    const masked = structuredClone(model)
+    masked.parts.push({
+      ...structuredClone(model.parts[0]),
+      id: 'eye-mask',
+    })
+    masked.parts[0].maskId = 'eye-mask'
+    const renderer = new PixiAvatarRenderer(
+      new MabatakiRuntime(masked),
+      [Texture.EMPTY, Texture.EMPTY],
+    )
+    const target = renderer.container.children[0] as Container
+
+    expect(target.mask).not.toBeNull()
+    renderer.destroy()
   })
 })

@@ -7,15 +7,16 @@
 ## 背景
 
 PoC初期はCoreと単一デモだけだったため、ディレクトリ規律で境界を守る単一packageが最小だった。
-その後、MediaPipe Adapter、PixiJS Renderer、Camera Compositor、人物Segmenter、WebRTC向け
-Canvas出力が必要になり、ルートpackageのdependenciesだけではCore利用者が不要な実装も取得する構造になった。
+その後、MediaPipe Adapter、PixiJS Renderer、Camera Compositor、人物Segmenter、録画・配信・
+リアルタイム通信へ再利用できるCanvas出力が必要になり、ルートpackageのdependenciesだけでは
+Core利用者が不要な実装も取得する構造になった。
 
 ## 決定
 
 pnpm workspaceへ移行し、次の責務を物理packageとして分離する。
 
 - `@mabataki/core`: Model、Parameter、変形、Physics、Smoothing。package dependenciesはゼロ
-- `@mabataki/mediapipe`: Face tracking、較正、Landmark、人物Segmentation
+- `@mabataki/mediapipe`: Face tracking、較正、Landmark、Accessory anchor
 - `@mabataki/pixi`: Coreが返す頂点バッファのPixiJS描画
 - `@mabataki/web`: Canvas captureと音声track合成。Signalingや通話roomは所有しない
 - `@mabataki/demo`: Editor、Viewer、Camera Compositor、サンプルasset
