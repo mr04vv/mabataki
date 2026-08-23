@@ -13,7 +13,7 @@
       h1 span { color: #9aa0a8; font-weight: 400; }
       label { font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
       fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
-      button, select { font-size: 12px; }
+      button, select, input[type='file'] { font-size: 12px; }
       input[type='range'] { width: 90px; }
       output { min-width: 4ch; color: #9aa0a8; font-variant-numeric: tabular-nums; }
       nav { display: flex; gap: 10px; font-size: 12px; }
@@ -31,7 +31,7 @@
         <select id="mode">
           <option value="accessory">camera + accessory</option>
           <option value="avatar-overlay">camera + avatar</option>
-          <option value="avatar-background">avatar behind person</option>
+          <option value="avatar-background">background + avatar</option>
         </select>
       </label>
       <fieldset>
@@ -43,6 +43,7 @@
           <output id="placement-scale-value">1.00×</output></label>
         <button id="placement-reset" type="button">reset position</button>
       </fieldset>
+      <label>background <input id="background-input" type="file" accept="image/*" /></label>
       <button id="camera">start camera</button>
       <label><input id="show-face-mesh" type="checkbox" /> show face mesh</label>
       <nav><a href="/">editor</a><a href="/viewer.html">runtime viewer</a></nav>
@@ -50,7 +51,7 @@
     </header>
     <div id="stage"></div>
     <p id="status">loading model…</p>
-    <p id="hint">The camera image is mirrored. Camera placement and segmentation stay outside the Mabataki runtime.</p>
+    <p id="hint">Choose any background image for background + avatar. Camera placement stays outside the Mabataki runtime.</p>
     <script type="module" src="/src/camera.ts"></script>
   </body>
 </html>

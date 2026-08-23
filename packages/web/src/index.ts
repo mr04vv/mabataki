@@ -9,7 +9,7 @@ export function captureCanvasStream(
   return canvas.captureStream(frameRate)
 }
 
-/** Combines a rendered video stream with microphone audio for a WebRTC sender. */
+/** Combines rendered video with audio for preview, recording, or transport. */
 export function combineWithAudio(
   videoStream: MediaStream,
   audioStream: MediaStream,

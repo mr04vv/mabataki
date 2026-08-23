@@ -21,8 +21,6 @@ export type {
 } from './face-tracker.js'
 export { estimateEyeAccessoryAnchor } from './accessory-tracking.js'
 export type { EyeAccessoryAnchor } from './accessory-tracking.js'
-export { confidenceToAlpha, MediaPipePersonSegmenter } from './person-segmenter.js'
-export type { PersonMask } from './person-segmenter.js'
 
 export interface FaceMeshConnection {
   start: number

@@ -8,28 +8,25 @@ import {
 } from 'pixi.js'
 import { ExponentialSmoother, loadModel, MabatakiRuntime } from '@mabataki/core'
 import {
-  confidenceToAlpha,
   estimateEyeAccessoryAnchor,
   FACE_MESH_CONNECTIONS,
   MediaPipeFaceTracker,
-  MediaPipePersonSegmenter,
 } from '@mabataki/mediapipe'
-import type { FaceTrackingFrame, NormalizedLandmark, PersonMask } from '@mabataki/mediapipe'
+import type { FaceTrackingFrame, NormalizedLandmark } from '@mabataki/mediapipe'
 import { PixiAvatarRenderer } from '@mabataki/pixi'
 
 const MODEL_URL = '/models/character/model.json'
 const GLASSES_URL = '/models/character/glasses.svg'
 const DEFAULT_WIDTH = 640
 const DEFAULT_HEIGHT = 480
-const MODEL_WIDTH = 403
-const MODEL_HEIGHT = 475
-const MODEL_HEAD_X = 259
-const MODEL_HEAD_Y = 80
-const MODEL_FACE_WIDTH = 260
-const MODEL_EYE_SPAN = 104
+const MODEL_HEAD_X = 284.5
+const MODEL_HEAD_Y = 253.3
+const MODEL_FACE_WIDTH = 455
+const ACCESSORY_PIVOT_X = 259
+const ACCESSORY_PIVOT_Y = 80
+const ACCESSORY_EYE_SPAN = 104
 const SMOOTHING_TIME_MS = 70
 const PLACEMENT_SMOOTHING_TIME_MS = 24
-const SEGMENTATION_INTERVAL_MS = 1000 / 15
 
 type CompositorMode = 'accessory' | 'avatar-overlay' | 'avatar-background'
 
@@ -49,12 +46,6 @@ function $<T extends HTMLElement>(selector: string): T {
   return element
 }
 
-function canvasContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
-  const context = canvas.getContext('2d')
-  if (context === null) throw new Error('2D canvas is unavailable')
-  return context
-}
-
 const stageHost = $('#stage')
 const statusEl = $('#status')
 const modeEl = $<HTMLSelectElement>('#mode')
@@ -68,6 +59,7 @@ const placementYValueEl = $<HTMLOutputElement>('#placement-y-value')
 const placementScaleValueEl = $<HTMLOutputElement>('#placement-scale-value')
 const placementResetEl = $<HTMLButtonElement>('#placement-reset')
 const showFaceMeshEl = $<HTMLInputElement>('#show-face-mesh')
+const backgroundInputEl = $<HTMLInputElement>('#background-input')
 
 const app = new Application()
 await app.init({
@@ -83,20 +75,12 @@ const avatar = new Container()
 app.stage.addChild(backdrop)
 
 let videoSprite: Sprite | null = null
+let backgroundSprite: Sprite | null = null
 app.stage.addChild(avatar)
-
-const foregroundCanvas = document.createElement('canvas')
-foregroundCanvas.width = DEFAULT_WIDTH
-foregroundCanvas.height = DEFAULT_HEIGHT
-const foregroundContext = canvasContext(foregroundCanvas)
-const foregroundTexture = Texture.from(foregroundCanvas)
-const foregroundSprite = new Sprite(foregroundTexture)
-foregroundSprite.visible = false
-app.stage.addChild(foregroundSprite)
 
 const accessoryTexture = await Assets.load<Texture>(GLASSES_URL)
 const accessory = new Sprite(accessoryTexture)
-accessory.pivot.set(MODEL_HEAD_X, MODEL_HEAD_Y)
+accessory.pivot.set(ACCESSORY_PIVOT_X, ACCESSORY_PIVOT_Y)
 accessory.visible = false
 app.stage.addChild(accessory)
 const faceMeshOverlay = new Graphics()
@@ -108,16 +92,15 @@ const modelBaseUrl = new URL(MODEL_URL, location.href)
 const modelTextures = await Promise.all(model.parts.map((part) =>
   Assets.load<Texture>(new URL(part.texture, modelBaseUrl).href),
 ))
+const modelWidth = Math.max(1, ...modelTextures.map((texture) => texture.width))
+const modelHeight = Math.max(1, ...modelTextures.map((texture) => texture.height))
 const runtime = new MabatakiRuntime(model)
 const avatarRenderer = new PixiAvatarRenderer(runtime, modelTextures)
 avatar.addChild(avatarRenderer.container)
 
 let faceTracker: MediaPipeFaceTracker | null = null
-let personSegmenter: MediaPipePersonSegmenter | null = null
-let segmenterPromise: Promise<MediaPipePersonSegmenter> | null = null
 let lastVideoTime = -1
 let lastFrameMs = 0
-let lastSegmentationMs = -Infinity
 let hasTrackedFace = false
 let sceneWidth = DEFAULT_WIDTH
 let sceneHeight = DEFAULT_HEIGHT
@@ -144,8 +127,6 @@ const accessorySmoothers = {
   eyeSpan: new ExponentialSmoother(PLACEMENT_SMOOTHING_TIME_MS),
   rotation: new ExponentialSmoother(PLACEMENT_SMOOTHING_TIME_MS),
 }
-const maskCanvas = document.createElement('canvas')
-const maskContext = canvasContext(maskCanvas)
 
 function activeMode(): CompositorMode {
   return modeEl.value as CompositorMode
@@ -186,17 +167,23 @@ function layoutVideoSprite(): void {
   videoSprite.scale.x = -Math.abs(videoSprite.scale.x)
 }
 
+function layoutBackgroundSprite(): void {
+  if (backgroundSprite === null) return
+  const width = backgroundSprite.texture.width
+  const height = backgroundSprite.texture.height
+  if (width <= 0 || height <= 0) return
+  backgroundSprite.anchor.set(0.5)
+  backgroundSprite.position.set(sceneWidth / 2, sceneHeight / 2)
+  backgroundSprite.scale.set(Math.max(sceneWidth / width, sceneHeight / height))
+}
+
 function resizeScene(width: number, height: number): void {
   sceneWidth = Math.max(1, width)
   sceneHeight = Math.max(1, height)
   app.renderer.resize(sceneWidth, sceneHeight)
-  foregroundCanvas.width = sceneWidth
-  foregroundCanvas.height = sceneHeight
-  foregroundTexture.source.update()
-  foregroundSprite.width = sceneWidth
-  foregroundSprite.height = sceneHeight
   drawBackdrop()
   layoutVideoSprite()
+  layoutBackgroundSprite()
   layoutTrackedObjects()
 }
 
@@ -215,7 +202,7 @@ function layoutTrackedObjects(): void {
       currentAccessoryAnchor.y * sceneHeight + offsetY,
     )
     accessory.scale.set(
-      currentAccessoryAnchor.eyeSpan * sceneWidth / MODEL_EYE_SPAN * placement.scale,
+      currentAccessoryAnchor.eyeSpan * sceneWidth / ACCESSORY_EYE_SPAN * placement.scale,
     )
     accessory.rotation = currentAccessoryAnchor.rotation
   } else if (mode === 'avatar-overlay') {
@@ -223,9 +210,9 @@ function layoutTrackedObjects(): void {
     avatar.position.set(faceX, faceY)
     avatar.scale.set(faceWidth / MODEL_FACE_WIDTH * placement.scale)
   } else {
-    avatar.pivot.set(MODEL_WIDTH / 2, MODEL_HEIGHT / 2)
+    avatar.pivot.set(modelWidth / 2, modelHeight / 2)
     avatar.position.set(sceneWidth * 0.76 + offsetX, sceneHeight * 0.53 + offsetY)
-    const scale = Math.min(sceneWidth / MODEL_WIDTH, sceneHeight / MODEL_HEIGHT) *
+    const scale = Math.min(sceneWidth / modelWidth, sceneHeight / modelHeight) *
       0.76 * placement.scale
     avatar.scale.set(scale)
   }
@@ -233,14 +220,17 @@ function layoutTrackedObjects(): void {
 
 function syncMode(): void {
   const mode = activeMode()
-  backdrop.visible = mode === 'avatar-background'
+  backdrop.visible = mode === 'avatar-background' && backgroundSprite === null
+  if (backgroundSprite !== null) {
+    backgroundSprite.visible = mode === 'avatar-background'
+  }
   if (videoSprite !== null) {
     videoSprite.visible = faceTracker !== null && mode !== 'avatar-background'
   }
   avatar.visible = mode === 'avatar-background' || (mode === 'avatar-overlay' && hasTrackedFace)
-  foregroundSprite.visible = mode === 'avatar-background' && faceTracker !== null
   accessory.visible = mode === 'accessory' && hasTrackedFace
   faceMeshOverlay.visible = showFaceMeshEl.checked && faceTracker !== null
+  backgroundInputEl.disabled = mode !== 'avatar-background'
   layoutTrackedObjects()
 }
 
@@ -301,54 +291,11 @@ function updateTracking(frame: FaceTrackingFrame, deltaMs: number): void {
     (showFaceMeshEl.checked ? ` · mesh ${frame.landmarks.length}` : '')
 }
 
-function updateForeground(mask: PersonMask): void {
-  if (maskCanvas.width !== mask.width || maskCanvas.height !== mask.height) {
-    maskCanvas.width = mask.width
-    maskCanvas.height = mask.height
-  }
-  const pixels = maskContext.createImageData(mask.width, mask.height)
-  for (let source = 0, target = 0; source < mask.confidence.length; source++, target += 4) {
-    pixels.data[target] = 255
-    pixels.data[target + 1] = 255
-    pixels.data[target + 2] = 255
-    pixels.data[target + 3] = confidenceToAlpha(mask.confidence[source])
-  }
-  maskContext.putImageData(pixels, 0, 0)
-
-  foregroundContext.clearRect(0, 0, sceneWidth, sceneHeight)
-  foregroundContext.save()
-  foregroundContext.translate(sceneWidth, 0)
-  foregroundContext.scale(-1, 1)
-  foregroundContext.drawImage(videoEl, 0, 0, sceneWidth, sceneHeight)
-  foregroundContext.restore()
-  foregroundContext.save()
-  foregroundContext.globalCompositeOperation = 'destination-in'
-  foregroundContext.translate(sceneWidth, 0)
-  foregroundContext.scale(-1, 1)
-  foregroundContext.drawImage(maskCanvas, 0, 0, sceneWidth, sceneHeight)
-  foregroundContext.restore()
-  foregroundTexture.source.update()
-}
-
-async function ensurePersonSegmenter(): Promise<MediaPipePersonSegmenter> {
-  if (personSegmenter !== null) return personSegmenter
-  segmenterPromise ??= MediaPipePersonSegmenter.create()
-  try {
-    personSegmenter = await segmenterPromise
-    return personSegmenter
-  } finally {
-    segmenterPromise = null
-  }
-}
-
 async function stopCamera(): Promise<void> {
   faceTracker?.close()
   faceTracker = null
-  personSegmenter?.close()
-  personSegmenter = null
   lastVideoTime = -1
   lastFrameMs = 0
-  lastSegmentationMs = -Infinity
   hasTrackedFace = false
   faceMeshOverlay.clear()
   for (const smoother of parameterSmoothers.values()) smoother.reset()
@@ -360,7 +307,9 @@ async function stopCamera(): Promise<void> {
     videoSprite = null
   }
   cameraEl.textContent = 'start camera'
-  statusEl.textContent = 'camera off'
+  statusEl.textContent = activeMode() === 'avatar-background'
+    ? 'background + avatar ready · camera is optional for tracking'
+    : 'camera off'
   syncMode()
 }
 
@@ -379,10 +328,6 @@ cameraEl.addEventListener('click', async () => {
     videoSprite = new Sprite(Texture.from(videoEl))
     app.stage.addChildAt(videoSprite, 1)
     resizeScene(width, height)
-    if (activeMode() === 'avatar-background') {
-      statusEl.textContent = 'loading person segmentation…'
-      await ensurePersonSegmenter()
-    }
     cameraEl.textContent = 'stop camera'
     statusEl.textContent = 'looking for a face…'
     syncMode()
@@ -397,13 +342,38 @@ cameraEl.addEventListener('click', async () => {
 modeEl.addEventListener('change', () => {
   syncPlacementControls()
   syncMode()
-  if (activeMode() === 'avatar-background' && faceTracker !== null) {
-    statusEl.textContent = 'loading person segmentation…'
-    void ensurePersonSegmenter().then(() => {
-      statusEl.textContent = 'person segmentation ready'
-    }).catch((error) => {
-      statusEl.textContent = `segmentation failed: ${error instanceof Error ? error.message : String(error)}`
-    })
+  if (activeMode() === 'avatar-background' && faceTracker === null) {
+    statusEl.textContent = 'background + avatar ready · camera is optional for tracking'
+  }
+})
+
+backgroundInputEl.addEventListener('change', async () => {
+  const file = backgroundInputEl.files?.[0]
+  if (file === undefined) return
+  const url = URL.createObjectURL(file)
+  try {
+    const image = new Image()
+    image.src = url
+    await image.decode()
+    const next = new Sprite(Texture.from(image))
+    next.visible = false
+    app.stage.addChildAt(next, 1)
+    const previous = backgroundSprite
+    backgroundSprite = next
+    if (previous !== null) {
+      const previousTexture = previous.texture
+      app.stage.removeChild(previous)
+      previous.destroy()
+      previousTexture.destroy(true)
+    }
+    layoutBackgroundSprite()
+    syncMode()
+    statusEl.textContent = `background loaded · ${file.name}`
+  } catch (error) {
+    alert(`Background load failed: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    URL.revokeObjectURL(url)
+    backgroundInputEl.value = ''
   }
 })
 
@@ -428,16 +398,6 @@ app.ticker.add((ticker) => {
     lastFrameMs = now
     const frame = faceTracker.sample(now)
     if (frame !== null) updateTracking(frame, deltaMs)
-
-    if (
-      activeMode() === 'avatar-background' &&
-      personSegmenter !== null &&
-      now - lastSegmentationMs >= SEGMENTATION_INTERVAL_MS
-    ) {
-      const mask = personSegmenter.sample(videoEl, now)
-      if (mask !== null) updateForeground(mask)
-      lastSegmentationMs = now
-    }
   }
   runtime.step(ticker.deltaMS)
   renderVertices()
@@ -448,4 +408,4 @@ syncPlacementControls()
 layoutTrackedObjects()
 syncMode()
 renderVertices()
-statusEl.textContent = `model ready · ${model.parts.length} parts · select a mode and start the camera`
+statusEl.textContent = `model ready · ${model.parts.length} parts · select a mode; camera is optional`
