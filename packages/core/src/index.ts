@@ -25,7 +25,7 @@ export { loadModel } from './loader.js'
 export { MabatakiRuntime } from './runtime.js'
 export type { PartPose, PhysicsRootMotion } from './runtime.js'
 export { ExponentialSmoother } from './smoothing.js'
-export { MotionMixer, validateMotionClip } from './motion.js'
+export { MotionMixer, MotionPlayer, validateMotionClip } from './motion.js'
 export {
   createFloatingMotion,
   createGroundedMotion,

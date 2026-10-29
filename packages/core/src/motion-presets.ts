@@ -37,6 +37,12 @@ export interface FloatingMotionOptions extends MotionPlaybackOptions {
   rotationPeriodMs?: number
   breathingPeriodMs?: number
   headPeriodMs?: number
+  /** Deterministic timing/amplitude variation in 0..0.5. */
+  variation?: number
+  /** Seed used to generate repeatable variation. */
+  seed?: number
+  /** Number of base cycles before the generated clip repeats. */
+  cycleCount?: number
   rotation?: number
   breathing?: number
   headYaw?: number
@@ -55,6 +61,8 @@ interface FloatingStyleDefaults {
   breathing: number
   headYaw: number
   headRoll: number
+  variation: number
+  seed: number
   blinkIntervalMs: number
   offsetMs: number
 }
@@ -72,6 +80,8 @@ const FLOATING_STYLE_DEFAULTS: Record<FloatingMotionStyle, FloatingStyleDefaults
     breathing: 0.006,
     headYaw: 0.04,
     headRoll: 0.012,
+    variation: 0.1,
+    seed: 104729,
     blinkIntervalMs: 4600,
     offsetMs: 0,
   },
@@ -87,6 +97,8 @@ const FLOATING_STYLE_DEFAULTS: Record<FloatingMotionStyle, FloatingStyleDefaults
     breathing: 0.012,
     headYaw: 0.03,
     headRoll: 0.025,
+    variation: 0.16,
+    seed: 130363,
     blinkIntervalMs: 5200,
     offsetMs: 0,
   },
@@ -102,6 +114,8 @@ const FLOATING_STYLE_DEFAULTS: Record<FloatingMotionStyle, FloatingStyleDefaults
     breathing: 0.004,
     headYaw: 0.08,
     headRoll: 0.035,
+    variation: 0.22,
+    seed: 155921,
     blinkIntervalMs: 3600,
     offsetMs: 430,
   },
@@ -156,7 +170,7 @@ function cycleTrack(
 ): MotionTrack {
   return {
     target,
-    interpolation: 'smoothstep',
+    interpolation: 'catmull-rom',
     keyframes: values.map((value, index) => ({
       timeMs: durationMs * index / (values.length - 1),
       value,
@@ -164,29 +178,101 @@ function cycleTrack(
   }
 }
 
+interface GeneratedTrack {
+  durationMs: number
+  track: MotionTrack
+}
+
+function seededRandom(seed: number): () => number {
+  let state = Math.trunc(seed) >>> 0
+  return () => {
+    state += 0x6D2B79F5
+    let value = state
+    value = Math.imul(value ^ value >>> 15, value | 1)
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61)
+    return ((value ^ value >>> 14) >>> 0) / 4294967296
+  }
+}
+
+function organicCycleTrack(
+  target: MotionTarget,
+  periodMs: number,
+  values: readonly number[],
+  variation: number,
+  seed: number,
+  cycleCount: number,
+): GeneratedTrack {
+  const random = seededRandom(seed)
+  const segmentMs = periodMs / (values.length - 1)
+  const keyframes = [{ timeMs: 0, value: values[0] }]
+  let timeMs = 0
+  for (let cycle = 0; cycle < cycleCount; cycle++) {
+    for (let segment = 1; segment < values.length; segment++) {
+      const variedCycle = cycle > 0
+      const timingScale = variedCycle
+        ? 1 + (random() * 2 - 1) * variation * 0.55
+        : 1
+      timeMs += segmentMs * timingScale
+      const baseValue = values[segment]
+      const isFinal = cycle === cycleCount - 1 && segment === values.length - 1
+      const amplitudeScale = variedCycle && !isFinal
+        ? 1 + (random() * 2 - 1) * variation
+        : 1
+      keyframes.push({ timeMs, value: baseValue * amplitudeScale })
+    }
+  }
+  return {
+    durationMs: timeMs,
+    track: {
+      target,
+      interpolation: 'catmull-rom',
+      keyframes,
+    },
+  }
+}
+
 function blinkLayer(
   id: string,
   options: MotionPlaybackOptions,
   defaultIntervalMs: number,
+  variation = 0,
+  seed = 0,
+  cycleCount = 1,
 ): MotionLayer {
   const intervalMs = positive('blinkIntervalMs', options.blinkIntervalMs ?? defaultIntervalMs)
   const durationMs = positive('blinkDurationMs', options.blinkDurationMs ?? 170)
   if (intervalMs <= durationMs + 600) {
     throw new Error('motion preset blinkIntervalMs must exceed blinkDurationMs by 600ms')
   }
-  const startMs = intervalMs - durationMs - 600
-  const safeStartMs = Math.max(0, startMs)
-  const middleMs = safeStartMs + durationMs / 2
-  const endMs = safeStartMs + durationMs
+  const random = seededRandom(seed)
+  const blinkTimes: Array<{ startMs: number; middleMs: number; endMs: number }> = []
+  let clipDurationMs = 0
+  for (let cycle = 0; cycle < cycleCount; cycle++) {
+    const variedInterval = cycle === 0
+      ? intervalMs
+      : intervalMs * (1 + (random() * 2 - 1) * variation)
+    if (variedInterval <= durationMs + 600) {
+      throw new Error('motion preset varied blink interval is too short')
+    }
+    const startMs = clipDurationMs + variedInterval - durationMs - 600
+    blinkTimes.push({
+      startMs,
+      middleMs: startMs + durationMs / 2,
+      endMs: startMs + durationMs,
+    })
+    clipDurationMs += variedInterval
+  }
   const eyeTrack = (id: string): MotionTrack => ({
     target: { kind: 'parameter', id },
     interpolation: 'smoothstep',
     keyframes: [
       { timeMs: 0, value: 1 },
-      { timeMs: safeStartMs, value: 1 },
-      { timeMs: middleMs, value: 0 },
-      { timeMs: endMs, value: 1 },
-      { timeMs: intervalMs, value: 1 },
+      ...blinkTimes.flatMap(({ startMs, middleMs, endMs }) => [
+        { timeMs: startMs, value: 1 },
+        { timeMs: middleMs, value: 0 },
+        { timeMs: endMs, value: 1 },
+      ]),
+      { timeMs: clipDurationMs, value: 1 },
     ],
   })
   return {
@@ -194,7 +280,7 @@ function blinkLayer(
     ...playback(options),
     clip: {
       id: `${id}-blink`,
-      durationMs: intervalMs,
+      durationMs: clipDurationMs,
       loop: true,
       tracks: [eyeTrack('eyeOpenLeft'), eyeTrack('eyeOpenRight')],
     },
@@ -268,26 +354,77 @@ export function createFloatingMotion(options: FloatingMotionOptions = {}): Motio
   const breathing = nonNegative('breathing', options.breathing ?? defaults.breathing)
   const headYaw = nonNegative('headYaw', options.headYaw ?? defaults.headYaw)
   const headRoll = nonNegative('headRoll', options.headRoll ?? defaults.headRoll)
+  const variation = finite('variation', options.variation ?? defaults.variation)
+  if (variation < 0 || variation > 0.5) {
+    throw new Error('motion preset variation must be within 0..0.5')
+  }
+  const seed = finite('seed', options.seed ?? defaults.seed)
+  const cycleCount = options.cycleCount ?? 4
+  if (!Number.isInteger(cycleCount) || cycleCount < 1 || cycleCount > 16) {
+    throw new Error('motion preset cycleCount must be an integer within 1..16')
+  }
   const resolvedPlayback: MotionPlaybackOptions = {
     ...options,
     offsetMs: options.offsetMs ?? defaults.offsetMs,
     blinkIntervalMs: options.blinkIntervalMs ?? defaults.blinkIntervalMs,
   }
+  const horizontal = organicCycleTrack(
+    { kind: 'root', property: 'translateX' },
+    periodXMs,
+    [amplitudeX, 0, -amplitudeX, 0, amplitudeX],
+    variation,
+    seed + 1,
+    cycleCount,
+  )
+  const vertical = organicCycleTrack(
+    { kind: 'root', property: 'translateY' },
+    periodYMs,
+    [0, -amplitudeY, 0, amplitudeY * 0.65, 0],
+    variation,
+    seed + 2,
+    cycleCount,
+  )
+  const rotationTrack = organicCycleTrack(
+    { kind: 'root', property: 'rotation' },
+    rotationPeriodMs,
+    [0, rotation, 0, -rotation, 0],
+    variation,
+    seed + 3,
+    cycleCount,
+  )
+  const breathingTrack = organicCycleTrack(
+    { kind: 'root', property: 'scaleY' },
+    breathingPeriodMs,
+    [0, breathing, 0, -breathing * 0.5, 0],
+    variation * 0.6,
+    seed + 4,
+    cycleCount,
+  )
+  const yawTrack = organicCycleTrack(
+    { kind: 'parameter', id: 'headYaw' },
+    headPeriodMs,
+    [-headYaw, headYaw, -headYaw],
+    variation,
+    seed + 5,
+    cycleCount,
+  )
+  const rollTrack = organicCycleTrack(
+    { kind: 'parameter', id: 'headRoll' },
+    headPeriodMs * 1.17,
+    [headRoll, -headRoll, headRoll],
+    variation,
+    seed + 6,
+    cycleCount,
+  )
   return [
     {
       blend: 'additive',
       ...playback(resolvedPlayback),
       clip: {
         id: `${style}-horizontal`,
-        durationMs: periodXMs,
+        durationMs: horizontal.durationMs,
         loop: true,
-        tracks: [
-          cycleTrack(
-            { kind: 'root', property: 'translateX' },
-            periodXMs,
-            [amplitudeX, 0, -amplitudeX, 0, amplitudeX],
-          ),
-        ],
+        tracks: [horizontal.track],
       },
     },
     {
@@ -295,15 +432,9 @@ export function createFloatingMotion(options: FloatingMotionOptions = {}): Motio
       ...playback(resolvedPlayback),
       clip: {
         id: `${style}-vertical`,
-        durationMs: periodYMs,
+        durationMs: vertical.durationMs,
         loop: true,
-        tracks: [
-          cycleTrack(
-            { kind: 'root', property: 'translateY' },
-            periodYMs,
-            [0, -amplitudeY, 0, amplitudeY * 0.65, 0],
-          ),
-        ],
+        tracks: [vertical.track],
       },
     },
     {
@@ -311,15 +442,9 @@ export function createFloatingMotion(options: FloatingMotionOptions = {}): Motio
       ...playback(resolvedPlayback),
       clip: {
         id: `${style}-rotation`,
-        durationMs: rotationPeriodMs,
+        durationMs: rotationTrack.durationMs,
         loop: true,
-        tracks: [
-          cycleTrack(
-            { kind: 'root', property: 'rotation' },
-            rotationPeriodMs,
-            [0, rotation, 0, -rotation, 0],
-          ),
-        ],
+        tracks: [rotationTrack.track],
       },
     },
     {
@@ -327,39 +452,39 @@ export function createFloatingMotion(options: FloatingMotionOptions = {}): Motio
       ...playback(resolvedPlayback),
       clip: {
         id: `${style}-breathing`,
-        durationMs: breathingPeriodMs,
+        durationMs: breathingTrack.durationMs,
         loop: true,
-        tracks: [
-          cycleTrack(
-            { kind: 'root', property: 'scaleY' },
-            breathingPeriodMs,
-            [0, breathing, 0, -breathing * 0.5, 0],
-          ),
-        ],
+        tracks: [breathingTrack.track],
       },
     },
     {
       blend: 'additive',
       ...playback(resolvedPlayback),
       clip: {
-        id: `${style}-expression`,
-        durationMs: headPeriodMs,
+        id: `${style}-head-yaw`,
+        durationMs: yawTrack.durationMs,
         loop: true,
-        tracks: [
-          cycleTrack(
-            { kind: 'parameter', id: 'headYaw' },
-            headPeriodMs,
-            [-headYaw, headYaw, -headYaw],
-          ),
-          cycleTrack(
-            { kind: 'parameter', id: 'headRoll' },
-            headPeriodMs,
-            [headRoll, -headRoll, headRoll],
-          ),
-        ],
+        tracks: [yawTrack.track],
       },
     },
-    blinkLayer(style, resolvedPlayback, defaults.blinkIntervalMs),
+    {
+      blend: 'additive',
+      ...playback(resolvedPlayback),
+      clip: {
+        id: `${style}-head-roll`,
+        durationMs: rollTrack.durationMs,
+        loop: true,
+        tracks: [rollTrack.track],
+      },
+    },
+    blinkLayer(
+      style,
+      resolvedPlayback,
+      defaults.blinkIntervalMs,
+      variation,
+      seed + 7,
+      cycleCount,
+    ),
   ]
 }
 

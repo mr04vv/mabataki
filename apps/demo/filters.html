@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Create and preview face-anchored 3D filters with Mabataki." />
+    <meta name="theme-color" content="#090c12" />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/editor.css" />
+    <link rel="stylesheet" href="/filters.css" />
+    <title>Mabataki Filter Studio</title>
+  </head>
+  <body class="filter-page">
+    <header class="app-bar">
+      <a class="brand" href="/" aria-label="Mabataki Avatar Studio home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span><strong>Mabataki</strong><small>Filter Studio</small></span>
+      </a>
+      <nav class="mode-switch" aria-label="Workspace mode">
+        <a class="mode-link" href="/">Edit</a>
+        <a class="mode-link" href="/camera.html">Live</a>
+        <span class="mode-link" aria-current="page">3D Filters</span>
+      </nav>
+      <div class="app-actions">
+        <label class="button button-secondary import-button">
+          Import .glb
+          <input id="filter-file" type="file" accept=".glb,model/gltf-binary" />
+        </label>
+        <button id="camera" class="button button-primary" type="button">Start camera</button>
+      </div>
+    </header>
+
+    <main class="filter-shell">
+      <aside class="filter-library">
+        <div class="filter-panel-heading">
+          <span class="eyebrow">Library</span>
+          <h1>Face filters</h1>
+          <p>Choose a rigid accessory or a mask covering the full face.</p>
+        </div>
+        <div class="filter-list" role="list">
+          <button class="filter-card is-active" data-filter="studio-glasses" type="button">
+            <span class="filter-thumb glasses-thumb" aria-hidden="true"><i></i><i></i></span>
+            <span><strong>Studio Glasses</strong><small>Accessory · face occlusion</small></span>
+            <span class="filter-kind">3D</span>
+          </button>
+          <button class="filter-card" data-filter="chrome-mask" type="button">
+            <span class="filter-thumb mask-thumb" aria-hidden="true"><i></i><i></i></span>
+            <span><strong>Chrome Mask</strong><small>Full face · jaw expression</small></span>
+            <span class="filter-kind">Mask</span>
+          </button>
+        </div>
+        <div class="format-note">
+          <span class="eyebrow">Authoring</span>
+          <strong>Bring your own GLB</strong>
+          <p>Model around a two-unit-wide reference face, import it, then tune placement here.</p>
+        </div>
+      </aside>
+
+      <section class="filter-workspace" aria-label="3D filter preview">
+        <header class="filter-workspace-bar">
+          <div>
+            <span class="eyebrow">Live compositor</span>
+            <strong id="active-filter-name">Studio Glasses</strong>
+          </div>
+          <span id="tracking-state" class="filter-state"><i></i>Camera off</span>
+        </header>
+        <div id="filter-stage" class="filter-stage">
+          <video id="camera-video" muted playsinline></video>
+          <canvas id="filter-canvas" aria-label="Rendered 3D face filter"></canvas>
+          <div id="camera-placeholder" class="camera-placeholder">
+            <div class="placeholder-face" aria-hidden="true"><i></i><i></i><b></b></div>
+            <strong>Camera preview</strong>
+            <span>Start the camera to attach the filter</span>
+          </div>
+          <div class="stage-grid" aria-hidden="true"></div>
+        </div>
+        <footer class="filter-status-bar">
+          <span id="status">Ready · tracking and rendering stay on this device</span>
+          <span id="tracking-values">yaw 0.0° · pitch 0.0° · mouth 0.00</span>
+        </footer>
+      </section>
+
+      <aside class="filter-inspector">
+        <div class="filter-panel-heading">
+          <span class="eyebrow">Filter manifest</span>
+          <h1>Placement</h1>
+          <p>Offsets use face-width units, so they remain stable across distance.</p>
+        </div>
+        <div class="filter-controls">
+          <label class="range-field">
+            <span><strong>Horizontal</strong><output id="offset-x-value">0.00</output></span>
+            <input id="offset-x" type="range" min="-0.6" max="0.6" step="0.01" value="0" />
+          </label>
+          <label class="range-field">
+            <span><strong>Vertical</strong><output id="offset-y-value">0.23</output></span>
+            <input id="offset-y" type="range" min="-0.6" max="0.8" step="0.01" value="0.23" />
+          </label>
+          <label class="range-field">
+            <span><strong>Depth</strong><output id="offset-z-value">0.00</output></span>
+            <input id="offset-z" type="range" min="-0.8" max="0.8" step="0.01" value="0" />
+          </label>
+          <label class="range-field">
+            <span><strong>Scale</strong><output id="scale-value">1.08×</output></span>
+            <input id="scale" type="range" min="0.5" max="1.8" step="0.01" value="1.08" />
+          </label>
+          <button id="reset" class="button button-secondary full-width" type="button">Reset placement</button>
+        </div>
+        <div class="manifest-card">
+          <div><span class="eyebrow">Portable data</span><span id="filter-type" class="selection-badge">Accessory</span></div>
+          <pre id="manifest-preview"></pre>
+        </div>
+        <div class="pipeline-note">
+          <span>MediaPipe</span><i>→</i><span>AR pose</span><i>→</i><span>Three.js</span>
+        </div>
+      </aside>
+    </main>
+    <script type="module" src="/src/filters.ts"></script>
+  </body>
+</html>

@@ -3,55 +3,187 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Preview Mabataki avatars and automatically anchored face accessories with a live camera."
+    />
+    <meta name="theme-color" content="#0c0f14" />
     <link rel="icon" href="data:," />
-    <title>mabataki — camera compositor</title>
-    <style>
-      :root { color-scheme: dark; }
-      body { margin: 0; font-family: system-ui, sans-serif; background: #14161a; color: #e8e8ea; }
-      header { padding: 12px 16px; border-bottom: 1px solid #2a2d33; display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; }
-      h1 { font-size: 14px; margin: 0 8px 0 0; font-weight: 600; }
-      h1 span { color: #9aa0a8; font-weight: 400; }
-      label { font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
-      fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
-      button, select, input[type='file'] { font-size: 12px; }
-      input[type='range'] { width: 90px; }
-      output { min-width: 4ch; color: #9aa0a8; font-variant-numeric: tabular-nums; }
-      nav { display: flex; gap: 10px; font-size: 12px; }
-      #stage { display: grid; place-items: center; padding: 16px; }
-      #stage canvas { width: min(100%, 960px); height: auto; border: 1px solid #2a2d33; border-radius: 8px; }
-      #status { font-size: 12px; color: #9aa0a8; padding: 0 16px 6px; margin: 0; }
-      #hint { font-size: 12px; color: #737a85; padding: 0 16px 16px; margin: 0; }
-      #camera-video { display: none; }
-    </style>
+    <link rel="stylesheet" href="/editor.css" />
+    <link rel="stylesheet" href="/camera.css" />
+    <title>Mabataki Live Studio</title>
   </head>
-  <body>
-    <header>
-      <h1>mabataki <span>camera compositor</span></h1>
-      <label>mode
-        <select id="mode">
-          <option value="accessory">camera + accessory</option>
-          <option value="avatar-overlay">camera + avatar</option>
-          <option value="avatar-background">background + avatar</option>
-        </select>
-      </label>
-      <fieldset>
-        <label>X <input id="placement-x" type="range" min="-40" max="40" step="1" value="0" />
-          <output id="placement-x-value">0%</output></label>
-        <label>Y <input id="placement-y" type="range" min="-40" max="40" step="1" value="0" />
-          <output id="placement-y-value">0%</output></label>
-        <label>size <input id="placement-scale" type="range" min="0.4" max="2.5" step="0.05" value="1" />
-          <output id="placement-scale-value">1.00×</output></label>
-        <button id="placement-reset" type="button">reset position</button>
-      </fieldset>
-      <label>background <input id="background-input" type="file" accept="image/*" /></label>
-      <button id="camera">start camera</button>
-      <label><input id="show-face-mesh" type="checkbox" /> show face mesh</label>
-      <nav><a href="/">editor</a><a href="/viewer.html">runtime viewer</a></nav>
-      <video id="camera-video" muted playsinline></video>
+  <body class="live-page">
+    <header class="app-bar">
+      <a class="brand" href="/" aria-label="Mabataki Avatar Studio home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>
+          <strong>Mabataki</strong>
+          <small>Live Studio</small>
+        </span>
+      </a>
+
+      <nav class="mode-switch" aria-label="Workspace mode">
+        <a class="mode-link" href="/">Edit</a>
+        <a class="mode-link" href="/?mode=preview">Preview</a>
+        <span class="mode-link" aria-current="page">Live</span>
+        <a class="mode-link" href="/filters.html">3D Filters</a>
+      </nav>
+
+      <div class="app-actions">
+        <button id="camera" class="button button-primary" type="button">Start camera</button>
+      </div>
     </header>
-    <div id="stage"></div>
-    <p id="status">loading model…</p>
-    <p id="hint">Choose any background image for background + avatar. Camera placement stays outside the Mabataki runtime.</p>
+
+    <main class="live-shell">
+      <aside class="panel live-mode-panel" aria-label="Live scene">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">Compositor</span>
+            <h1>Live scene</h1>
+          </div>
+          <span class="status-dot" title="Model loaded"></span>
+        </div>
+
+        <section class="panel-section">
+          <label class="field">
+            <span>Mode</span>
+            <select id="mode">
+              <option value="accessory">Camera + accessory</option>
+              <option value="avatar-overlay">Camera + 2.5D avatar</option>
+              <option value="avatar-background">Background + avatar</option>
+            </select>
+          </label>
+          <div class="mode-summary">
+            <span class="mode-summary-icon" aria-hidden="true">◎</span>
+            <p id="mode-description">
+              Eye landmarks place the glasses while 3D face pose warps their mesh through head turns.
+            </p>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Scene asset</span>
+              <h2>Background</h2>
+            </div>
+          </div>
+          <label class="drop-input" id="background-picker">
+            <span class="drop-icon" aria-hidden="true">+</span>
+            <span>
+              <strong>Choose background</strong>
+              <small>Used by Background + avatar</small>
+            </span>
+            <input id="background-input" type="file" accept="image/*" />
+          </label>
+        </section>
+
+        <section class="panel-section demo-section">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Explore</span>
+              <h2>Runtime demos</h2>
+            </div>
+          </div>
+          <nav class="demo-links" aria-label="Runtime demos">
+            <a href="/viewer.html"><span>Runtime Viewer</span><span aria-hidden="true">↗</span></a>
+            <a href="/motion.html"><span>Motion Lab</span><span aria-hidden="true">↗</span></a>
+            <a href="/filters.html"><span>3D Filter Studio</span><span aria-hidden="true">↗</span></a>
+            <a href="/ai-call.html"><span>AI Participant</span><span aria-hidden="true">↗</span></a>
+          </nav>
+        </section>
+      </aside>
+
+      <section class="workspace live-workspace" aria-label="Live canvas">
+        <header class="workspace-bar live-workspace-bar">
+          <div class="workspace-title">
+            <span class="eyebrow">Canvas</span>
+            <strong id="scene-title">Accessory preview</strong>
+          </div>
+          <div class="live-state">
+            <span class="live-state-dot" aria-hidden="true"></span>
+            <span id="tracking-state">Preview</span>
+          </div>
+        </header>
+        <div class="stage-viewport live-stage-viewport">
+          <div id="stage" class="live-stage"></div>
+        </div>
+        <footer class="status-bar live-status-bar">
+          <span class="status-indicator" aria-hidden="true"></span>
+          <p id="status">Preparing live preview…</p>
+          <p id="hint">Horizontal placement follows the eye anchor automatically.</p>
+        </footer>
+      </section>
+
+      <aside class="panel live-inspector" aria-label="Placement inspector">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">Face local</span>
+            <h1 id="placement-heading">Attachment</h1>
+          </div>
+          <span id="placement-badge" class="selection-badge">Auto</span>
+        </div>
+
+        <section class="panel-section">
+          <div class="anchor-card">
+            <div class="anchor-preview" aria-hidden="true">
+              <span></span><span></span>
+            </div>
+            <div>
+              <span class="eyebrow">Anchor</span>
+              <strong id="anchor-name">Eye line</strong>
+              <small id="anchor-detail">Horizontal position · Automatic</small>
+            </div>
+          </div>
+
+          <label class="range-field placement-row" data-placement-x>
+            <span><strong id="placement-x-label">Horizontal offset</strong><output id="placement-x-value">0%</output></span>
+            <input id="placement-x" type="range" min="-40" max="40" step="1" value="0" />
+          </label>
+          <label class="range-field placement-row" data-placement-y>
+            <span><strong id="placement-y-label">Vertical offset</strong><output id="placement-y-value">0.00 face</output></span>
+            <input id="placement-y" type="range" min="-40" max="40" step="1" value="0" />
+          </label>
+          <label class="range-field placement-row" data-placement-scale>
+            <span><strong>Size</strong><output id="placement-scale-value">1.00×</output></span>
+            <input id="placement-scale" type="range" min="0.4" max="2.5" step="0.05" value="1" />
+          </label>
+          <button id="placement-reset" class="button button-secondary full-width" type="button">
+            Reset placement
+          </button>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Diagnostics</span>
+              <h2>Tracking</h2>
+            </div>
+          </div>
+          <label class="check-row compact">
+            <span>
+              <strong>Show face mesh</strong>
+              <small>Inspect the MediaPipe landmarks</small>
+            </span>
+            <input id="show-face-mesh" type="checkbox" />
+          </label>
+          <button id="face-calibration" class="button button-secondary full-width" type="button" hidden disabled>
+            Recalibrate head pose
+          </button>
+          <p id="tracking-details" class="tracking-values">
+            Demo face · eye anchor 0.50 / 0.42 · span 0.22
+          </p>
+        </section>
+
+        <section class="panel-section architecture-note">
+          <span class="eyebrow">Boundary</span>
+          <p>Camera-space 2.5D projection stays in the compositor. Character shape and expressions remain owned by the Runtime model.</p>
+        </section>
+      </aside>
+    </main>
+
+    <video id="camera-video" muted playsinline hidden></video>
     <script type="module" src="/src/camera.ts"></script>
   </body>
 </html>

@@ -11,7 +11,7 @@ import {
 } from '@mabataki/core'
 import type { Binding, Keyframe, MabatakiModel, ParameterDef, Part } from '@mabataki/core'
 import { MediaPipeFaceTracker } from '@mabataki/mediapipe'
-import { softSelectionWeights, verticesInRect } from './editor-tools'
+import { nearestValueIndex, softSelectionWeights, verticesInRect } from './editor-tools'
 
 const DEFAULT_MODEL_URL = '/models/character/model.json'
 const MARGIN = 80
@@ -62,11 +62,15 @@ type PointerDrag =
 
 const stageHost = $('#stage')
 const statusEl = $('#status')
+const workspaceContextEl = $('#workspace-context')
+const modeHelpEl = $('#mode-help')
 const partEl = $<HTMLSelectElement>('#part')
 const parameterEl = $<HTMLSelectElement>('#parameter')
 const keyPoseEl = $<HTMLSelectElement>('#key-pose')
 const paramNameEl = $('#param-name')
+const parameterModeLabelEl = $('#parameter-mode-label')
 const sliderEl = $<HTMLInputElement>('#slider')
+const keyPoseTicksEl = $<HTMLDataListElement>('#key-pose-ticks')
 const sliderValueEl = $('#slider-value')
 const animateEl = $<HTMLInputElement>('#animate')
 const colsEl = $<HTMLInputElement>('#cols')
@@ -81,6 +85,7 @@ const trackingValuesEl = $('#tracking-values')
 const toolEl = $<HTMLSelectElement>('#tool')
 const softSelectionEl = $<HTMLInputElement>('#soft-selection')
 const softRadiusEl = $<HTMLInputElement>('#soft-radius')
+const radiusValueEl = $<HTMLOutputElement>('#radius-value')
 const selectionCountEl = $('#selection-count')
 const pinCountEl = $('#pin-count')
 const regionStatusEl = $('#region-status')
@@ -115,8 +120,8 @@ const undoStack: HistoryEntry[] = []
 const redoStack: HistoryEntry[] = []
 
 const app = new Application()
-await app.init({ background: '#14161a', antialias: true })
-stageHost.append(app.canvas)
+await app.init({ background: '#11161d', antialias: true })
+stageHost.replaceChildren(app.canvas)
 const world = new Container()
 world.position.set(MARGIN, MARGIN)
 app.stage.addChild(world)
@@ -181,6 +186,11 @@ function replaceOptions(
 
 function populateKeyPoses(preferred?: string): void {
   const zeroIndex = activeBinding().keyframes.findIndex((keyframe) => keyframe.value === 0)
+  keyPoseTicksEl.replaceChildren(...activeBinding().keyframes.map((keyframe) => {
+    const option = document.createElement('option')
+    option.value = String(keyframe.value)
+    return option
+  }))
   replaceOptions(
     keyPoseEl,
     activeBinding().keyframes.map((keyframe, index) => ({
@@ -265,6 +275,7 @@ function syncSelectionUi(): void {
   selectionCountEl.textContent = `${selectedVertices.size} selected`
   pinCountEl.textContent = `${pinnedVertices().size} pinned`
   softRadiusEl.disabled = !softSelectionEl.checked
+  radiusValueEl.textContent = `${softRadiusEl.value} px`
   const region = currentMeshRegion()
   rebuildRegionEl.disabled = region === undefined
   regionStatusEl.textContent = region === undefined
@@ -462,6 +473,7 @@ function updateStatus(): void {
   const part = activePart()
   const parameter = boundParam()
   const vertexCount = part.mesh.vertices.length / 2
+  workspaceContextEl.textContent = `${part.id} / ${parameter.id}`
   statusEl.textContent = mode === 'edit'
     ? `editing ${part.id}.${parameter.id} @ ${activeKeyframe().value} — ${toolEl.value}, ${selectedVertices.size}/${vertexCount} selected`
     : `previewing ${parameter.id} = ${store.get(parameter.id).toFixed(2)} (${model.parts.length} parts)`
@@ -494,7 +506,19 @@ function adoptModel(next: MabatakiModel): void {
 
 function setMode(next: 'edit' | 'preview'): void {
   mode = next
+  document.body.dataset.mode = next
   for (const radio of modeRadios) radio.checked = radio.value === next
+  modeHelpEl.textContent = next === 'edit'
+    ? 'Choose a key pose, then select and drag vertices to shape it.'
+    : 'Drive parameters manually, automatically, or from the camera.'
+  parameterModeLabelEl.textContent = next === 'edit' ? 'Key pose' : 'Runtime input'
+  sliderEl.title = next === 'edit'
+    ? 'Snaps to the nearest authored key pose'
+    : 'Previews any value in the parameter range'
+  const url = new URL(location.href)
+  if (next === 'preview') url.searchParams.set('mode', 'preview')
+  else url.searchParams.delete('mode')
+  history.replaceState(null, '', url)
   if (next === 'edit') store.set(boundParam().id, activeKeyframe().value)
   else {
     previewRuntime = new MabatakiRuntime(model)
@@ -647,6 +671,25 @@ keyPoseEl.addEventListener('change', () => {
   refresh()
 })
 
+sliderEl.addEventListener('keydown', (event) => {
+  if (mode !== 'edit') return
+  const direction = event.key === 'ArrowLeft' || event.key === 'ArrowDown'
+    ? -1
+    : event.key === 'ArrowRight' || event.key === 'ArrowUp'
+      ? 1
+      : 0
+  if (direction === 0) return
+  event.preventDefault()
+  const nextIndex = Math.max(
+    0,
+    Math.min(activeBinding().keyframes.length - 1, Number(keyPoseEl.value) + direction),
+  )
+  keyPoseEl.value = String(nextIndex)
+  store.set(boundParam().id, activeKeyframe().value)
+  clearSelection()
+  refresh()
+})
+
 toolEl.addEventListener('change', () => {
   pointerDrag = null
   refresh()
@@ -657,7 +700,10 @@ softSelectionEl.addEventListener('change', () => {
   refresh()
 })
 
-softRadiusEl.addEventListener('input', refresh)
+softRadiusEl.addEventListener('input', () => {
+  syncSelectionUi()
+  refresh()
+})
 
 $('#clear-selection').addEventListener('click', () => {
   clearSelection()
@@ -708,9 +754,20 @@ for (const radio of modeRadios) {
 
 sliderEl.addEventListener('input', () => {
   const parameter = boundParam()
+  if (mode === 'edit') {
+    const keyframes = activeBinding().keyframes
+    const nearestIndex = nearestValueIndex(
+      keyframes.map((keyframe) => keyframe.value),
+      sliderEl.valueAsNumber,
+    )
+    keyPoseEl.value = String(nearestIndex)
+    store.set(parameter.id, keyframes[nearestIndex].value)
+    clearSelection()
+    refresh()
+    return
+  }
   store.set(parameter.id, sliderEl.valueAsNumber)
-  if (mode !== 'preview') setMode('preview')
-  else refresh()
+  refresh()
 })
 
 animateEl.addEventListener('change', () => {
@@ -909,4 +966,5 @@ for (const part of initialModel.parts) {
   textures.set(part.id, await Assets.load<Texture>(new URL(part.texture, modelUrl).href))
 }
 adoptModel(initialModel)
-setMode('edit')
+const requestedMode = new URLSearchParams(location.search).get('mode')
+setMode(requestedMode === 'preview' ? 'preview' : 'edit')

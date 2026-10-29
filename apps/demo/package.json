@@ -10,10 +10,16 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@mabataki/ar": "workspace:*",
     "@mabataki/core": "workspace:*",
     "@mabataki/mediapipe": "workspace:*",
     "@mabataki/pixi": "workspace:*",
+    "@mabataki/three": "workspace:*",
     "@mabataki/web": "workspace:*",
-    "pixi.js": "^8.19.0"
+    "pixi.js": "^8.19.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0"
   }
 }

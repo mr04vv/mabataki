@@ -25,6 +25,10 @@ Tickerへ直接実装すると、時間計算、合成順序、座標単位が�
   通常のLayer配列を生成する。FactoryはRuntime分岐やキャラクター種別を追加しない
 - `createFloatingMotion`は`hover`、`balloon`、`ghost`の名前付き初期値を提供するが、選択後も
   振幅や周期を個別上書きでき、結果は常に通常のLayer配列とする
+- 周期運動の中間点では`catmull-rom`補間を使い、制御点ごとに速度がゼロになる機械的な停止を避ける
+- Floating FactoryはSeed付きの決定的な振幅・時間Variationを複数Cycle生成する。同じSeedは
+  同じ結果になり、テストと録画再生の再現性を維持する
+- `MotionPlayer`は現在の見た目から新しいLayer集合へCrossfadeし、Preset切替時のRoot Jumpを防ぐ
 
 ### 動作を選ぶルール
 
@@ -49,10 +53,11 @@ Root平行移動はモデル座標、回転はRadian、Scaleは`1`を中立値�
 
 - `grounded`、`floating`、`lively`と各Floating Styleは同じMixerのデータ違いとして実装できる
 - 横・縦の振幅、周期、回転、呼吸、頭部の振幅を型付きOptionsから調整できる
+- `variation`、`seed`、`cycleCount`で反復の目立ち方と再現性を調整できる
 - Tracker、音声、AI、手動入力をMotionの外から合成できる
 - RendererはRoot Motionの適用方法を選べるため、PixiJS以外でも利用できる
 - 現在のModel v1にはClipを埋め込まず、Presetの品質とAuthoring要件を確認してから形式へ追加する
-- Clipのイベント発火、遷移Graph、ランダム性、Part単位Transformは将来の拡張になる
+- Clipのイベント発火と状態遷移Graphは将来の拡張になる
 
 ## 却下した代替案
 

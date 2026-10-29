@@ -2,9 +2,9 @@
 
 ## Project Structure & Module Organization
 
-This repository is a pnpm workspace. `packages/core/` contains the dependency-free, renderer-agnostic Runtime and is the only currently publishable package. `packages/mediapipe/` owns tracking and segmentation, `packages/pixi/` converts Core vertex buffers into PixiJS meshes, and `packages/web/` contains thin browser-stream helpers. `apps/demo/` contains the Editor, Runtime Viewer, Camera Compositor, and `public/models/` sample assets. Keep tests beside implementations as `*.test.ts`. Never edit generated `packages/*/dist/` or `apps/demo/dist/` files.
+This repository is a pnpm workspace. `packages/core/` contains the dependency-free, renderer-agnostic 2D Runtime and is the only currently publishable package. `packages/ar/` owns renderer-independent 3D filter manifests and pose resolution, `packages/mediapipe/` owns tracking and segmentation, `packages/pixi/` renders Core vertex buffers, `packages/three/` renders AR filters, and `packages/web/` contains thin browser-stream helpers. `apps/demo/` contains the Editor, viewers, compositors, and sample assets. Keep tests beside implementations as `*.test.ts`. Never edit generated `packages/*/dist/` or `apps/demo/dist/` files.
 
-Dependencies must point inward: applications may compose every package; `pixi` may depend on `core`; `core` must not import MediaPipe, PixiJS, DOM rendering, camera, or WebRTC code.
+Dependencies must point inward: applications may compose every package; `pixi` may depend on `core`; `three` may depend on `ar`; headless packages must not import MediaPipe, DOM rendering, camera, or WebRTC code.
 
 ## Build, Test, and Development Commands
 

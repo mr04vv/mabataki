@@ -1,4 +1,4 @@
-export type MotionInterpolation = 'linear' | 'smoothstep'
+export type MotionInterpolation = 'linear' | 'smoothstep' | 'catmull-rom'
 export type MotionBlendMode = 'additive' | 'override'
 export type RootMotionProperty =
   | 'translateX'
@@ -129,7 +129,8 @@ export function validateMotionClip(input: unknown): MotionClip {
     assert(
       track.interpolation === undefined ||
         track.interpolation === 'linear' ||
-        track.interpolation === 'smoothstep',
+        track.interpolation === 'smoothstep' ||
+        track.interpolation === 'catmull-rom',
       `clip "${clipId}" has an unknown interpolation`,
     )
     assert(
@@ -168,7 +169,12 @@ function clipTime(clip: MotionClip, elapsedMs: number): number {
   return ((elapsedMs % clip.durationMs) + clip.durationMs) % clip.durationMs
 }
 
-function interpolate(track: MotionTrack, timeMs: number): number {
+function interpolate(
+  track: MotionTrack,
+  timeMs: number,
+  loop: boolean,
+  durationMs: number,
+): number {
   const first = track.keyframes[0]
   if (timeMs <= first.timeMs) return first.value
   const last = track.keyframes[track.keyframes.length - 1]
@@ -181,6 +187,39 @@ function interpolate(track: MotionTrack, timeMs: number): number {
     let progress = (timeMs - left.timeMs) / (right.timeMs - left.timeMs)
     if (track.interpolation === 'smoothstep') {
       progress = progress * progress * (3 - 2 * progress)
+    }
+    if (track.interpolation === 'catmull-rom') {
+      const previous = index >= 2
+        ? track.keyframes[index - 2]
+        : loop && track.keyframes.length > 2
+          ? {
+              ...track.keyframes[track.keyframes.length - 2],
+              timeMs: track.keyframes[track.keyframes.length - 2].timeMs - durationMs,
+            }
+          : left
+      const next = index + 1 < track.keyframes.length
+        ? track.keyframes[index + 1]
+        : loop && track.keyframes.length > 2
+          ? {
+              ...track.keyframes[1],
+              timeMs: durationMs + track.keyframes[1].timeMs,
+            }
+          : right
+      const squared = progress * progress
+      const cubed = squared * progress
+      const segmentMs = right.timeMs - left.timeMs
+      const leftSpanMs = right.timeMs - previous.timeMs
+      const rightSpanMs = next.timeMs - left.timeMs
+      const leftSlope = leftSpanMs === 0 ? 0 : (right.value - previous.value) / leftSpanMs
+      const rightSlope = rightSpanMs === 0 ? 0 : (next.value - left.value) / rightSpanMs
+      const leftBasis = 2 * cubed - 3 * squared + 1
+      const leftSlopeBasis = cubed - 2 * squared + progress
+      const rightBasis = -2 * cubed + 3 * squared
+      const rightSlopeBasis = cubed - squared
+      return leftBasis * left.value +
+        leftSlopeBasis * segmentMs * leftSlope +
+        rightBasis * right.value +
+        rightSlopeBasis * segmentMs * rightSlope
     }
     return left.value + (right.value - left.value) * progress
   }
@@ -245,7 +284,7 @@ export class MotionMixer {
       const layer = this.layers[index]
       const timeMs = clipTime(clip, elapsedMs * layer.speed + layer.offsetMs)
       for (const track of clip.tracks) {
-        const value = interpolate(track, timeMs)
+        const value = interpolate(track, timeMs, clip.loop ?? false, clip.durationMs)
         if (track.target.kind === 'parameter') {
           const current = frame.parameters[track.target.id] ?? 0
           frame.parameters[track.target.id] = blendValue(
@@ -265,6 +304,79 @@ export class MotionMixer {
         )
       }
     }
+    return frame
+  }
+}
+
+interface ActiveMotion {
+  mixer: MotionMixer
+  startedAtMs: number
+}
+
+function blendFrames(from: MotionFrame, to: MotionFrame, progress: number): MotionFrame {
+  const parameters: Record<string, number> = {}
+  const parameterIds = new Set([
+    ...Object.keys(from.parameters),
+    ...Object.keys(to.parameters),
+  ])
+  for (const id of parameterIds) {
+    const fromValue = from.parameters[id] ?? 0
+    const toValue = to.parameters[id] ?? 0
+    parameters[id] = fromValue + (toValue - fromValue) * progress
+  }
+  const root = { ...ROOT_IDENTITY }
+  for (const property of Object.keys(root) as RootMotionProperty[]) {
+    root[property] = from.root[property] + (to.root[property] - from.root[property]) * progress
+  }
+  return { parameters, root }
+}
+
+/**
+ * Owns preset playback time and crossfades without exposing renderer or model
+ * concepts. Calling transitionTo during a fade starts from the visible frame.
+ */
+export class MotionPlayer {
+  private active: ActiveMotion
+  private transitionFrom: MotionFrame | null = null
+  private transitionStartedAtMs = 0
+  private transitionDurationMs = 0
+
+  constructor(layers: readonly MotionLayer[], startedAtMs = 0) {
+    assert(Number.isFinite(startedAtMs), 'startedAtMs must be finite')
+    this.active = { mixer: new MotionMixer(layers), startedAtMs }
+  }
+
+  transitionTo(
+    layers: readonly MotionLayer[],
+    elapsedMs: number,
+    durationMs = 450,
+    baseParameters: Record<string, number> = {},
+  ): void {
+    assert(Number.isFinite(elapsedMs), 'elapsedMs must be finite')
+    assert(Number.isFinite(durationMs) && durationMs >= 0, 'durationMs must be non-negative')
+    const visible = this.sample(elapsedMs, baseParameters)
+    this.active = { mixer: new MotionMixer(layers), startedAtMs: elapsedMs }
+    this.transitionFrom = durationMs === 0 ? null : visible
+    this.transitionStartedAtMs = elapsedMs
+    this.transitionDurationMs = durationMs
+  }
+
+  sample(elapsedMs: number, baseParameters: Record<string, number> = {}): MotionFrame {
+    assert(Number.isFinite(elapsedMs), 'elapsedMs must be finite')
+    const target = this.active.mixer.sample(
+      Math.max(0, elapsedMs - this.active.startedAtMs),
+      baseParameters,
+    )
+    if (this.transitionFrom === null) {
+      return target
+    }
+    const linearProgress = Math.min(
+      1,
+      Math.max(0, (elapsedMs - this.transitionStartedAtMs) / this.transitionDurationMs),
+    )
+    const progress = linearProgress * linearProgress * (3 - 2 * linearProgress)
+    const frame = blendFrames(this.transitionFrom, target, progress)
+    if (linearProgress === 1) this.transitionFrom = null
     return frame
   }
 }

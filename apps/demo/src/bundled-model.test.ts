@@ -104,4 +104,30 @@ describe('bundled character model', () => {
       }
     }
   })
+
+  it('mirrors the authored head yaw poses across the texture', () => {
+    const part = validateModel(characterData).parts[0]
+    const yaw = binding(part, 'headYaw')
+    const negative = yaw.keyframes.find((keyframe) => keyframe.value === -1)
+    const positive = yaw.keyframes.find((keyframe) => keyframe.value === 1)
+    expect(negative).toBeDefined()
+    expect(positive).toBeDefined()
+
+    const columns = new Set(
+      part.mesh.vertices.filter((_, index) => index % 2 === 0),
+    ).size
+    const vertexCount = part.mesh.vertices.length / 2
+    expect(vertexCount % columns).toBe(0)
+    for (let vertex = 0; vertex < vertexCount; vertex++) {
+      const row = Math.floor(vertex / columns)
+      const column = vertex % columns
+      const mirror = row * columns + columns - 1 - column
+      expect(negative?.deltas[vertex * 2]).toBeCloseTo(
+        -(positive?.deltas[mirror * 2] ?? Number.NaN),
+      )
+      expect(negative?.deltas[vertex * 2 + 1]).toBeCloseTo(
+        positive?.deltas[mirror * 2 + 1] ?? Number.NaN,
+      )
+    }
+  })
 })

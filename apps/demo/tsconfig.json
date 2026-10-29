@@ -5,9 +5,11 @@
     "noEmit": true,
     "resolveJsonModule": true,
     "paths": {
+      "@mabataki/ar": ["../../packages/ar/src/index.ts"],
       "@mabataki/core": ["../../packages/core/src/index.ts"],
       "@mabataki/mediapipe": ["../../packages/mediapipe/src/index.ts"],
       "@mabataki/pixi": ["../../packages/pixi/src/index.ts"],
+      "@mabataki/three": ["../../packages/three/src/index.ts"],
       "@mabataki/web": ["../../packages/web/src/index.ts"]
     }
   },

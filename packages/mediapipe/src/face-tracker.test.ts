@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { FaceLandmarkerResult } from '@mediapipe/tasks-vision'
 import {
+  applyFacePoseToParameters,
   calibrateFaceScale,
   calibrateEyeOpen,
   calibrateJawOpen,
+  calibratePoseAngle,
   estimateFacePlacement,
   estimateFaceWidth,
   estimateHeadRoll,
   estimateHeadYaw,
+  facePoseFromResult,
   faceTrackingFrameFromResult,
   faceValuesFromResult,
 } from './face-tracker'
@@ -50,6 +53,118 @@ describe('estimateHeadRoll', () => {
     landmarks[454] = { x: 0.7, y: 0.405, z: 0, visibility: 1 }
     expect(estimateHeadRoll({ faceLandmarks: [landmarks] } as FaceLandmarkerResult)).toBe(0)
     expect(estimateHeadRoll({ faceLandmarks: [] } as unknown as FaceLandmarkerResult)).toBe(0)
+  })
+})
+
+describe('facePoseFromResult', () => {
+  it('extracts and mirrors rotation from a column-major face transform', () => {
+    const yaw = Math.PI / 6
+    const result = {
+      facialTransformationMatrixes: [{
+        rows: 4,
+        columns: 4,
+        data: [
+          Math.cos(yaw), 0, -Math.sin(yaw), 0,
+          0, 1, 0, 0,
+          Math.sin(yaw), 0, Math.cos(yaw), 0,
+          0, 0, 0, 1,
+        ],
+      }],
+    } as unknown as FaceLandmarkerResult
+
+    const pose = facePoseFromResult(result)
+    expect(pose?.yaw).toBeCloseTo(-yaw)
+    expect(pose?.pitch).toBeCloseTo(0)
+    expect(pose?.roll).toBeCloseTo(0)
+    expect(pose?.matrix).toHaveLength(16)
+  })
+
+  it('normalizes matrix scale and can preserve unmirrored coordinates', () => {
+    const roll = Math.PI / 8
+    const scale = 2.5
+    const result = {
+      facialTransformationMatrixes: [{
+        rows: 4,
+        columns: 4,
+        data: [
+          Math.cos(roll) * scale, Math.sin(roll) * scale, 0, 0,
+          -Math.sin(roll) * scale, Math.cos(roll) * scale, 0, 0,
+          0, 0, scale, 0,
+          0, 0, 0, 1,
+        ],
+      }],
+    } as FaceLandmarkerResult
+
+    expect(facePoseFromResult(result, false)?.roll).toBeCloseTo(roll)
+  })
+
+  it('rejects missing, malformed, and non-finite matrices', () => {
+    expect(facePoseFromResult({} as FaceLandmarkerResult)).toBeNull()
+    expect(facePoseFromResult({
+      facialTransformationMatrixes: [{ rows: 4, columns: 4 }],
+    } as FaceLandmarkerResult)).toBeNull()
+    expect(facePoseFromResult({
+      facialTransformationMatrixes: [{ rows: 3, columns: 3, data: Array(9).fill(0) }],
+    } as FaceLandmarkerResult)).toBeNull()
+    expect(facePoseFromResult({
+      facialTransformationMatrixes: [{
+        rows: 4,
+        columns: 4,
+        data: [...Array(15).fill(0), Number.NaN],
+      }],
+    } as FaceLandmarkerResult)).toBeNull()
+  })
+})
+
+describe('physical pose parameter calibration', () => {
+  it('maps authored physical angles linearly to normalized key poses', () => {
+    const fullScale = 35 * Math.PI / 180
+    expect(calibratePoseAngle(0, 0, fullScale)).toBe(0)
+    expect(calibratePoseAngle(fullScale / 2, 0, fullScale)).toBeCloseTo(0.5)
+    expect(calibratePoseAngle(-fullScale, 0, fullScale)).toBe(-1)
+    expect(calibratePoseAngle(fullScale * 2, 0, fullScale)).toBe(1)
+  })
+
+  it('replaces only pose parameters and preserves expression tracking', () => {
+    const parameters = {
+      headYaw: 0.9,
+      headRoll: -0.9,
+      eyeOpenLeft: 0.8,
+      eyeOpenRight: 0.7,
+      mouthOpen: 0.6,
+      mouthSmileLeft: 0.5,
+      mouthSmileRight: 0.4,
+    }
+    const pose = {
+      matrix: Array(16).fill(0),
+      yaw: 10 * Math.PI / 180,
+      pitch: 5 * Math.PI / 180,
+      roll: -5 * Math.PI / 180,
+    }
+    const calibrated = applyFacePoseToParameters(parameters, pose, {
+      headYawFullScaleRadians: 20 * Math.PI / 180,
+      headRollFullScaleRadians: 10 * Math.PI / 180,
+      neutralYawRadians: 0,
+      neutralRollRadians: 0,
+    })
+
+    expect(calibrated.headYaw).toBeCloseTo(0.5)
+    expect(calibrated.headRoll).toBeCloseTo(-0.5)
+    expect(calibrated.mouthOpen).toBe(0.6)
+    expect(calibrated.eyeOpenLeft).toBe(0.8)
+  })
+
+  it('falls back to landmark parameters when no transformation matrix is available', () => {
+    const parameters = {
+      headYaw: 0.4,
+      headRoll: -0.3,
+      eyeOpenLeft: 1,
+      eyeOpenRight: 1,
+      mouthOpen: 0,
+      mouthSmileLeft: 0,
+      mouthSmileRight: 0,
+    }
+    expect(applyFacePoseToParameters(parameters, null)).toBe(parameters)
   })
 })
 
@@ -153,7 +268,34 @@ describe('faceTrackingFrameFromResult', () => {
       rotation: 0,
     })
     expect(frame?.landmarks).toHaveLength(455)
+    expect(frame?.facePose).toBeNull()
     expect(frame?.parameters).not.toHaveProperty('scale')
     expect(frame?.parameters).not.toHaveProperty('x')
+  })
+
+  it('drives yaw from the physical face pose instead of the landmark heuristic', () => {
+    const yaw = 17.5 * Math.PI / 180
+    const landmarks = landmarksWithFaceWidth(0.4)
+    landmarks[1].x = 0.56
+    const result = {
+      faceLandmarks: [landmarks],
+      faceBlendshapes: [{ categories: [] }],
+      facialTransformationMatrixes: [{
+        rows: 4,
+        columns: 4,
+        data: [
+          Math.cos(-yaw), 0, -Math.sin(-yaw), 0,
+          0, 1, 0, 0,
+          Math.sin(-yaw), 0, Math.cos(-yaw), 0,
+          0, 0, 0, 1,
+        ],
+      }],
+    } as unknown as FaceLandmarkerResult
+
+    const landmarkYaw = estimateHeadYaw(result)
+    const frame = faceTrackingFrameFromResult(result, 0.4)
+    expect(landmarkYaw).not.toBeCloseTo(0.5)
+    expect(frame?.facePose?.yaw).toBeCloseTo(yaw)
+    expect(frame?.parameters.headYaw).toBeCloseTo(0.5)
   })
 })

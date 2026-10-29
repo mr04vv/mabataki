@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mabataki リポジトリ解説</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ubuntu+Sans:wght@400;500;700&amp;family=Noto+Sans+JP:wght@400;500;700&amp;family=Ubuntu+Mono:wght@400;700&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./design-system/document.css">
+<script src="./design-system/math-copy.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script>document.addEventListener("DOMContentLoaded", () => hljs.highlightAll());</script>
+<style>
+  .mb-filepath { font-family: var(--mb-font-mono); font-size: 13px; }
+  .mb-number { font-family: var(--mb-font-mono); font-size: 28px; font-weight: 700; line-height: 1.2; }
+  .mb-card .mb-number + p { margin-top: 6px; }
+  .mb-reading-list li { margin-bottom: 12px; }
+  .mb-figure-frame svg text { font-family: var(--mb-font-sans); fill: var(--mb-ink); }
+  .mb-figure-frame svg .mono { font-family: var(--mb-font-mono); }
+  details {
+    background: var(--mb-surface);
+    border: var(--mb-border-w) solid var(--mb-rule);
+    border-radius: var(--mb-radius);
+    padding: 12px 16px;
+    margin: 12px 0;
+  }
+  summary { color: var(--mb-ink); font-weight: 700; cursor: pointer; }
+  summary + * { margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="mb-page">
+
+<header class="mb-header">
+  <div>
+    <h1>Mabataki リポジトリ解説</h1>
+    <p class="mb-meta-line">repository anatomy / 2026-08-17 / commit 63114dd</p>
+  </div>
+</header>
+
+<p class="mb-lede">
+Mabatakiは、顔認識ライブラリそのものではありません。入力された数値パラメータを、
+作者が用意したKey Poseに従って2D Meshの頂点へ変換する、小さなWeb-first Runtimeです。
+この文書は「どのファイルが何を担当し、1フレームがどう処理されるか」をコードに沿って説明します。
+</p>
+
+<div class="mb-wrap">
+<main class="mb-main">
+
+<nav class="mb-toc">
+  <ol>
+    <li><a href="#background">何を解決するリポジトリか</a></li>
+    <li><a href="#workspace">Workspaceと依存方向</a></li>
+    <li><a href="#runtime">Core Runtimeの処理</a></li>
+    <li><a href="#model">model.jsonの読み方</a></li>
+    <li><a href="#tracking">カメラから描画まで</a></li>
+    <li><a href="#demos">3つのデモの違い</a></li>
+    <li><a href="#reading">おすすめのコード読解順</a></li>
+    <li><a href="#current">現在できることと限界</a></li>
+  </ol>
+</nav>
+
+<div class="mb-summary">
+  <ul>
+    <li>本体は <code>@mabataki/core</code>。MediaPipe、PixiJS、カメラ、WebRTCを知らない</li>
+    <li>動きの意味はコードではなく <code>model.json</code> のParameter、Part、Keyframeが持つ</li>
+    <li>MediaPipeはカメラ値を共通Parameterへ変換し、PixiJSは結果の頂点バッファを描画する</li>
+    <li>現在の完成度はPoC。Runtimeの核は成立しているが、汎用EditorやMask、階層は未完成</li>
+  </ul>
+</div>
+
+<h2 id="background">何を解決するリポジトリか</h2>
+
+<p>
+一般的なAuto Rigは、画像から「顔」「目」「髪」などを推測します。この推測は人型では便利でも、
+人外キャラクターや独特な絵柄では品質が不安定です。Mabatakiは自動推測をCoreから外し、
+作者が決めた形をRuntimeが忠実に補間する方式を選んでいます。
+</p>
+
+<div class="mb-grid-2">
+  <div class="mb-card">
+    <div class="mb-card-title">作者が決めるもの</div>
+    <p>画像のPart分け、Mesh、ParameterごとのKey Pose、必要ならSpringの頂点Weight。</p>
+  </div>
+  <div class="mb-card">
+    <div class="mb-card-title">Runtimeが保証するもの</div>
+    <p>値域のClamp、Keyframe補間、複数Bindingの加算、Spring計算、再利用可能な頂点バッファ。</p>
+  </div>
+</div>
+
+<p>
+したがって中心APIは、カメラではなく次の3行です。スライダー、録画データ、別Trackerのどれでも、
+同じParameter値を作れば同じモデルを動かせます。
+</p>
+
+<pre><code class="language-typescript">const runtime = new MabatakiRuntime(model)
+runtime.update({ mouthOpen: 0.72, headYaw: -0.2 })
+const positions = runtime.getPartVertices('mouth')</code></pre>
+
+<p>
+この方針の根拠は
+<a href="./docs/adr/0001-key-poses-over-auto-rig.md">ADR-0001</a>、
+<a href="./docs/adr/0003-parameter-contract.md">ADR-0003</a>、
+<a href="./docs/adr/0015-web-first-minimal-runtime.md">ADR-0015</a>
+に記録されています。
+</p>
+
+<h2 id="workspace">Workspaceと依存方向</h2>
+
+<p>
+pnpm Workspaceは、責務をディレクトリ規約ではなくpackage境界として固定します。
+依存は外側からCoreへ向かい、CoreからTrackerやRendererへ戻りません。
+</p>
+
+<figure class="mb-figure">
+  <div class="mb-figure-frame">
+    <svg viewBox="0 0 720 520" width="720" role="img" aria-labelledby="workspace-title workspace-desc">
+      <title id="workspace-title">Mabataki Workspaceの依存方向</title>
+      <desc id="workspace-desc">DemoがMediaPipe、Pixi、Web、Coreを組み合わせ、PixiだけがCoreへ依存する。</desc>
+      <defs>
+        <marker id="arrow-workspace" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#111110"/>
+        </marker>
+      </defs>
+      <g fill="#FFFFFF" stroke="#111110" stroke-width="2">
+        <rect x="190" y="20" width="340" height="72" rx="12"/>
+        <rect x="30" y="160" width="190" height="80" rx="12"/>
+        <rect x="265" y="160" width="190" height="80" rx="12"/>
+        <rect x="500" y="160" width="190" height="80" rx="12"/>
+        <rect x="190" y="330" width="340" height="92" rx="12"/>
+      </g>
+      <g fill="none" stroke="#111110" stroke-width="2" marker-end="url(#arrow-workspace)">
+        <path d="M290 92 L150 160"/>
+        <path d="M360 92 L360 160"/>
+        <path d="M430 92 L595 160"/>
+        <path d="M315 92 L315 330"/>
+        <path d="M360 240 L360 330"/>
+      </g>
+      <g text-anchor="middle">
+        <text x="360" y="50" font-size="18" font-weight="700">@mabataki/demo</text>
+        <text x="360" y="75" font-size="14">Editor / Viewer / Camera Compositor</text>
+        <text x="125" y="191" font-size="17" font-weight="700">@mabataki/mediapipe</text>
+        <text x="125" y="216" font-size="13">Tracking / Calibration</text>
+        <text x="360" y="191" font-size="17" font-weight="700">@mabataki/pixi</text>
+        <text x="360" y="216" font-size="13">Mesh Renderer</text>
+        <text x="595" y="191" font-size="17" font-weight="700">@mabataki/web</text>
+        <text x="595" y="216" font-size="13">MediaStream helpers</text>
+        <text x="360" y="367" font-size="20" font-weight="700">@mabataki/core</text>
+        <text x="360" y="395" font-size="14">Model / Parameter / Deformation / Physics</text>
+        <text x="360" y="472" font-size="13" class="mono">Core package dependencies: 0</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption>fig.1 Workspaceの依存方向。根拠: package.json群とADR-0018</figcaption>
+</figure>
+
+<table>
+  <tr><th class="mb-rowlabel">場所</th><th>責務</th><th>公開状態</th></tr>
+  <tr><td class="mb-rowlabel"><a href="./packages/core/src/">packages/core</a></td><td>モデル検証、変形、Parameter、Spring、Smoothing</td><td>公開可能</td></tr>
+  <tr><td class="mb-rowlabel"><a href="./packages/mediapipe/src/">packages/mediapipe</a></td><td>Face Landmarker、較正、配置、Accessory anchor</td><td>private</td></tr>
+  <tr><td class="mb-rowlabel"><a href="./packages/pixi/src/index.ts">packages/pixi</a></td><td>Float32ArrayをPixiJS Meshへ反映</td><td>private</td></tr>
+  <tr><td class="mb-rowlabel"><a href="./packages/web/src/index.ts">packages/web</a></td><td>Canvas映像とマイク音声をMediaStream化</td><td>private</td></tr>
+  <tr><td class="mb-rowlabel"><a href="./apps/demo/">apps/demo</a></td><td>全packageを組み合わせる実験場</td><td>非公開</td></tr>
+</table>
+
+<p>
+ここでいう「依存ゼロ」はnpm package dependencyがゼロという意味です。
+Coreの <code>loadModel()</code> はブラウザの <code>fetch</code> を使うため、
+あらゆるJavaScript環境から完全に独立しているわけではありません。
+すでに読み込んだJSONへ <code>validateModel()</code> を使う経路なら、画像APIやCanvasは不要です。
+</p>
+
+<h2 id="runtime">Core Runtimeの処理</h2>
+
+<p>
+Coreの中心は
+<a href="./packages/core/src/runtime.ts">MabatakiRuntime</a>です。
+Constructorはモデルを検証し、Partごとに基準頂点、出力頂点、Spring状態を一度だけ確保します。
+以後は同じ <code>Float32Array</code> を再利用します。
+</p>
+
+<figure class="mb-figure">
+  <div class="mb-figure-frame">
+    <svg viewBox="0 0 720 640" width="720" role="img" aria-labelledby="runtime-title runtime-desc">
+      <title id="runtime-title">Runtime内の1フレーム</title>
+      <desc id="runtime-desc">Parameter更新からKeyframe補間、Spring、頂点バッファ取得までの順序。</desc>
+      <defs>
+        <marker id="arrow-runtime" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#111110"/>
+        </marker>
+      </defs>
+      <g fill="#FFFFFF" stroke="#111110" stroke-width="2">
+        <rect x="150" y="20" width="420" height="62" rx="12"/>
+        <rect x="150" y="120" width="420" height="72" rx="12"/>
+        <rect x="150" y="230" width="420" height="72" rx="12"/>
+        <rect x="150" y="340" width="420" height="72" rx="12"/>
+        <rect x="150" y="450" width="420" height="72" rx="12"/>
+        <rect x="150" y="560" width="420" height="62" rx="12"/>
+      </g>
+      <g fill="none" stroke="#111110" stroke-width="2" marker-end="url(#arrow-runtime)">
+        <line x1="360" y1="82" x2="360" y2="120"/>
+        <line x1="360" y1="192" x2="360" y2="230"/>
+        <line x1="360" y1="302" x2="360" y2="340"/>
+        <line x1="360" y1="412" x2="360" y2="450"/>
+        <line x1="360" y1="522" x2="360" y2="560"/>
+      </g>
+      <g text-anchor="middle">
+        <text x="360" y="57" font-size="17" font-weight="700" class="mono">runtime.update(values)</text>
+        <text x="360" y="150" font-size="17" font-weight="700">ParameterStore</text>
+        <text x="360" y="176" font-size="13">宣言済みIDだけ保存し、min / maxへClamp</text>
+        <text x="360" y="260" font-size="17" font-weight="700" class="mono">runtime.step(deltaMs)</text>
+        <text x="360" y="286" font-size="13">任意のSpring状態だけ時間発展</text>
+        <text x="360" y="370" font-size="17" font-weight="700" class="mono">getPartVertices(partId)</text>
+        <text x="360" y="396" font-size="13">dirtyな場合だけ全Partを再計算</text>
+        <text x="360" y="480" font-size="17" font-weight="700">Keyframe補間とBinding加算</text>
+        <text x="360" y="506" font-size="13">base + 各Parameterの頂点delta</text>
+        <text x="360" y="597" font-size="17" font-weight="700">再利用するFloat32Array</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption>fig.2 1フレームのCore処理。根拠: packages/core/src/runtime.ts</figcaption>
+</figure>
+
+<h3>1. Parameterを安全な範囲へ入れる</h3>
+
+<p>
+<a href="./packages/core/src/params.ts">ParameterStore</a>は、
+モデルが宣言したIDだけを保持し、値を <code>min..max</code> へClampします。
+<code>MabatakiRuntime.update()</code>は未知IDを無視するため、
+MediaPipeがモデル未対応の値を含んでいても、そのまま入力できます。
+</p>
+
+<h3>2. Keyframe列を区分線形補間する</h3>
+
+<p>
+<a href="./packages/core/src/deform.ts">accumulateBinding()</a>はParameter値を挟む2個のKeyframeを探し、
+それぞれの頂点deltaを線形補間します。範囲外の値は端のKeyframeへ固定されます。
+Partに複数Bindingがあれば、結果は加算されます。
+</p>
+
+<p>
+頂点 $i$ の最終位置は、概念的には次の式です。
+</p>
+
+<p>$$
+\boldsymbol{p}_i =
+\boldsymbol{b}_i +
+\sum_{k \in B}\mathtt{lerp}\!\left(\boldsymbol{d}_{k,\mathrm{lo},i},
+\boldsymbol{d}_{k,\mathrm{hi},i}, t_k\right) +
+\boldsymbol{s}_i
+$$</p>
+
+<table>
+  <tr><th class="mb-rowlabel">記号</th><th>意味</th></tr>
+  <tr><td class="mb-rowlabel">$\boldsymbol{p}_i$</td><td>描画する最終頂点位置</td></tr>
+  <tr><td class="mb-rowlabel">$\boldsymbol{b}_i$</td><td>モデルに保存された基準頂点</td></tr>
+  <tr><td class="mb-rowlabel">$\boldsymbol{d}$</td><td>作者がKey Poseで編集した頂点差分</td></tr>
+  <tr><td class="mb-rowlabel">$\boldsymbol{s}_i$</td><td>任意のSpringによる遅れ</td></tr>
+</table>
+
+<h3>3. SpringはKey Poseとは別に時間を進める</h3>
+
+<p>
+<code>springBindings</code>は、髪や耳の先端を遅らせる仕組みです。
+各頂点の <code>weights</code> が0なら接着点、1なら最大影響になります。
+<code>step()</code>は最大1/120秒の小刻みな区間で減衰振動を計算し、
+長時間停止後の復帰は250msへ制限します。現在のサンプルモデルにはSpring設定がありませんが、
+Runtimeと検証は実装済みです。
+</p>
+
+<h3>4. dirtyフラグで不要な計算を避ける</h3>
+
+<p>
+Parameter更新またはSpring更新があったときだけ <code>dirty = true</code> になります。
+描画が60fps、Trackingが30fpsでも、値が変化しない描画フレームではMesh変形を再計算しません。
+返却バッファも再利用するため、毎フレームの配列生成を避けています。
+</p>
+
+<h2 id="model">model.jsonの読み方</h2>
+
+<p>
+モデル形式はプレーンJSONと画像ファイルです。
+<a href="./packages/core/src/model.ts">validateModel()</a>が、Parameterの重複、頂点とUVの長さ、
+Triangle index、Keyframe順序、delta数、Spring weightなどを読み込み時に検証します。
+</p>
+
+<pre><code class="language-json">{
+  "version": 1,
+  "parameters": [
+    { "id": "mouthOpen", "min": 0, "max": 1, "default": 0 }
+  ],
+  "parts": [
+    {
+      "id": "mouth",
+      "texture": "mouth.png",
+      "mesh": {
+        "vertices": [180, 105, 199.625, 105],
+        "uvs": [0.4466, 0.2210, 0.4953, 0.2210],
+        "indices": [0, 1, 9]
+      },
+      "bindings": [
+        {
+          "parameterId": "mouthOpen",
+          "keyframes": [
+            { "value": 0, "deltas": [] },
+            { "value": 1, "deltas": [] }
+          ]
+        }
+      ]
+    }
+  ]
+}</code></pre>
+
+<p>
+上の <code>deltas</code> は説明用に省略しています。実データでは
+<code>vertices</code> と同じ要素数が必須です。座標は画像全体のPixel空間、
+UVは0から1のTexture座標です。そのため顔が画像中央にある必要はなく、
+尻尾や余白を含む画像でも、Mesh頂点とUVが正しければCoreは同じように処理します。
+</p>
+
+<h3>現在のサンプルキャラクター</h3>
+
+<table>
+  <tr><th class="mb-rowlabel">Part</th><th>Mesh</th><th>反応するParameter</th></tr>
+  <tr><td class="mb-rowlabel">face</td><td>1369頂点 / 2592三角形</td><td>Yaw, Roll, Mouth Open, 左右のEye Open</td></tr>
+</table>
+
+<p>
+現在のサンプルは <code>man_55.png</code> 1枚を1個のMeshで動かします。
+目と口のKey Poseは同じMesh内の局所頂点だけを編集しています。単一画像でも動かせる一方、
+手やメガネなどを絶対に歪ませたくない場合は独立Partへ分ける必要があります。
+Camera Compositorの <code>glasses.svg</code> はモデルPartではなく、直接Trackingする別Spriteです。
+</p>
+
+<h2 id="tracking">カメラから描画まで</h2>
+
+<p>
+MediaPipe Adapterは、Tracker固有値をRuntimeへ直接漏らしません。
+<a href="./packages/mediapipe/src/face-tracker.ts">face-tracker.ts</a>が
+ランドマークとBlendshapeを、共通Parameterと画面配置情報の2系統へ変換します。
+</p>
+
+<figure class="mb-figure">
+  <div class="mb-figure-frame">
+    <svg viewBox="0 0 760 660" width="760" role="img" aria-labelledby="tracking-title tracking-desc">
+      <title id="tracking-title">カメラ入力からCanvasと通話までの処理境界</title>
+      <desc id="tracking-desc">MediaPipe出力をParameterとView Transformに分離し、RuntimeとRendererへ別々に適用する。</desc>
+      <defs>
+        <marker id="arrow-tracking" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#111110"/>
+        </marker>
+      </defs>
+      <g fill="#FFFFFF" stroke="#111110" stroke-width="2">
+        <rect x="220" y="18" width="320" height="58" rx="12"/>
+        <rect x="220" y="108" width="320" height="72" rx="12"/>
+        <rect x="70" y="232" width="270" height="78" rx="12"/>
+        <rect x="420" y="232" width="270" height="78" rx="12"/>
+        <rect x="70" y="362" width="270" height="78" rx="12"/>
+        <rect x="420" y="362" width="270" height="78" rx="12"/>
+        <rect x="220" y="492" width="320" height="66" rx="12"/>
+        <rect x="220" y="600" width="320" height="48" rx="12"/>
+      </g>
+      <g fill="none" stroke="#111110" stroke-width="2" marker-end="url(#arrow-tracking)">
+        <line x1="380" y1="76" x2="380" y2="108"/>
+        <path d="M320 180 L205 232"/>
+        <path d="M440 180 L555 232"/>
+        <line x1="205" y1="310" x2="205" y2="362"/>
+        <line x1="555" y1="310" x2="555" y2="362"/>
+        <path d="M205 440 L330 492"/>
+        <path d="M555 440 L430 492"/>
+        <line x1="380" y1="558" x2="380" y2="600"/>
+      </g>
+      <g text-anchor="middle">
+        <text x="380" y="53" font-size="17" font-weight="700">Web Camera</text>
+        <text x="380" y="138" font-size="17" font-weight="700">MediaPipe Adapter</text>
+        <text x="380" y="162" font-size="13">Landmark / Blendshapeの較正とMirror補正</text>
+        <text x="205" y="262" font-size="17" font-weight="700">AvatarParameters</text>
+        <text x="205" y="286" font-size="13" class="mono">mouthOpen / headYaw / eyeOpen</text>
+        <text x="555" y="262" font-size="17" font-weight="700">View Transform</text>
+        <text x="555" y="286" font-size="13" class="mono">x / y / faceWidth / rotation / scale</text>
+        <text x="205" y="392" font-size="17" font-weight="700">Mabataki Runtime</text>
+        <text x="205" y="416" font-size="13">モデル内部の頂点変形</text>
+        <text x="555" y="392" font-size="17" font-weight="700">Root Container</text>
+        <text x="555" y="416" font-size="13">Canvas内の位置、回転、拡縮</text>
+        <text x="380" y="522" font-size="17" font-weight="700">PixiJS Canvas</text>
+        <text x="380" y="545" font-size="13">AvatarまたはCamera Compositor</text>
+        <text x="380" y="630" font-size="16" font-weight="700">MediaStream / Product WebRTC</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption>fig.3 表情変形とカメラ空間の配置を混ぜない構成</figcaption>
+</figure>
+
+<h3>Parameter系統</h3>
+
+<p>
+Yawは鼻1番と輪郭234・454番の相対位置、Rollは左右輪郭を結ぶ線の角度から求めます。
+口と目はMediaPipe BlendshapeをDead Zone、Full Scale、Gammaで較正します。
+カメラ映像は鏡像なのでYawとRollの符号、左右Blinkの対応も反転します。
+その後、呼び出し側が <a href="./packages/core/src/smoothing.ts">ExponentialSmoother</a> を適用します。
+</p>
+
+<h3>View Transform系統</h3>
+
+<p>
+顔の画面位置、幅、回転はモデルの表情ではありません。
+この値はRuntimeへ渡さず、PixiJSのRoot Containerへ適用します。
+顔へ近づいたとき、顔・目・口・メガネをまとめて拡縮できるのはこの分離のおかげです。
+</p>
+
+<div class="mb-card">
+  <div class="mb-card-label">汎用性についての重要な境界</div>
+  <p>
+  Coreは画像内の顔位置を仮定しません。一方、
+  <a href="./apps/demo/src/camera.ts">Camera Compositor</a>は現状のサンプルを顔へ重ねるため、
+  <code>MODEL_HEAD_X = 284.5</code>、<code>MODEL_HEAD_Y = 253.3</code>、
+  <code>MODEL_FACE_WIDTH = 455</code>というモデル固有定数を持ちます。
+  任意モデルをCamera Overlayへ載せるには、これらをモデルmetadataまたはEditor出力へ移す必要があります。
+  </p>
+</div>
+
+<h3>PixiJSとWebRTC</h3>
+
+<p>
+<a href="./packages/pixi/src/index.ts">PixiAvatarRenderer</a>は各Partに
+<code>MeshGeometry</code>を作り、毎フレーム <code>aPosition</code> bufferだけを書き換えます。
+<a href="./packages/web/src/index.ts">@mabataki/web</a>はCanvasを
+<code>captureStream()</code>し、マイクのAudio Trackと結合します。
+Signaling、Room、接続管理はLiveKitなど製品側の責務です。
+</p>
+
+<pre><code class="language-typescript">const video = captureCanvasStream(pixiApp.canvas, 30)
+const outgoing = combineWithAudio(video, microphoneStream)
+
+// outgoingを既存のWebRTC送信処理へ渡す
+</code></pre>
+
+<h2 id="demos">3つのデモの違い</h2>
+
+<div class="mb-grid-3">
+  <div class="mb-card">
+    <div class="mb-card-title">Editor</div>
+    <p class="mb-filepath"><a href="./apps/demo/src/main.ts">apps/demo/src/main.ts</a></p>
+    <p>Part、Parameter、Key Poseを選び、頂点deltaを編集してmodel.jsonを書き出す制作PoC。</p>
+  </div>
+  <div class="mb-card">
+    <div class="mb-card-title">Viewer</div>
+    <p class="mb-filepath"><a href="./apps/demo/src/viewer.ts">apps/demo/src/viewer.ts</a></p>
+    <p>モデル固有ロジックを持たず、JSON、Texture、Runtime、Rendererを結ぶ最小の再生例。</p>
+  </div>
+  <div class="mb-card">
+    <div class="mb-card-title">Camera</div>
+    <p class="mb-filepath"><a href="./apps/demo/src/camera.ts">apps/demo/src/camera.ts</a></p>
+    <p>Camera映像、Avatar、Accessory、任意の背景画像をレイヤー合成する統合PoC。</p>
+  </div>
+</div>
+
+<h3>EditorがRenderer packageを直接使わない理由</h3>
+
+<p>
+EditorのEdit Modeは、通常のRuntime出力ではなく「選択中Key Poseのdeltaだけ」を生で表示します。
+Preview Modeでは <code>MabatakiRuntime</code> を使いますが、編集ハンドルや選択領域を重ねるため、
+Editor自身がPixiJS Meshを管理しています。これは重複というより、制作画面だけに必要な別経路です。
+</p>
+
+<h3>Camera Compositorの3モード</h3>
+
+<table>
+  <tr><th class="mb-rowlabel">Mode</th><th>レイヤー構成</th><th>追従基準</th></tr>
+  <tr><td class="mb-rowlabel">accessory</td><td>Cameraの上へメガネSprite</td><td>左右目の外端33・263番</td></tr>
+  <tr><td class="mb-rowlabel">avatar-overlay</td><td>Cameraの上へAvatar</td><td>顔中心、顔幅、モデル頭部Pivot</td></tr>
+  <tr><td class="mb-rowlabel">avatar-background</td><td>任意の背景画像の上へAvatar</td><td>Avatarは固定配置、Cameraは表情入力のみ</td></tr>
+</table>
+
+<p>
+背景モードはCameraなしでも表示でき、画像をアップロードするとCanvas全体へCover表示します。
+Cameraを開始した場合もCamera映像は描画せず、顔Tracking値だけでAvatarを動かします。
+Face Mesh表示はDebug用で、MediaPipeのTessellation接続を鏡像Canvas座標へ変換して描画します。
+</p>
+
+<h2 id="reading">おすすめのコード読解順</h2>
+
+<p>
+ファイル数より因果関係を優先すると、次の順番が最短です。
+</p>
+
+<ol class="mb-reading-list">
+  <li>
+    <strong><a href="./packages/core/src/model.ts">model.ts</a></strong><br>
+    データ契約と不正入力の境界を把握する。まずinterface、次に <code>validateModel()</code> を読む。
+  </li>
+  <li>
+    <strong><a href="./packages/core/src/deform.ts">deform.ts</a></strong><br>
+    59行だけで、Mabatakiの中心数学を確認する。<code>accumulateBinding()</code> が最重要。
+  </li>
+  <li>
+    <strong><a href="./packages/core/src/runtime.ts">runtime.ts</a></strong><br>
+    Parameter、buffer再利用、dirty判定、Springをどう束ねるかを見る。
+  </li>
+  <li>
+    <strong><a href="./apps/demo/public/models/character/model.json">実際のmodel.json</a></strong><br>
+    1個の <code>face</code> Meshで、頭、口、左右の目を局所的に動かすBindingを照合する。
+  </li>
+  <li>
+    <strong><a href="./packages/pixi/src/index.ts">PixiAvatarRenderer</a></strong><br>
+    CoreのFloat32ArrayがGPUの頂点bufferになる接点を確認する。
+  </li>
+  <li>
+    <strong><a href="./packages/mediapipe/src/face-tracker.ts">face-tracker.ts</a></strong><br>
+    Tracker固有値をParameterとView Transformへ分ける理由を確認する。
+  </li>
+  <li>
+    <strong><a href="./apps/demo/src/viewer.ts">viewer.ts</a></strong>、
+    <strong><a href="./apps/demo/src/camera.ts">camera.ts</a></strong>、
+    <strong><a href="./apps/demo/src/main.ts">main.ts</a></strong><br>
+    最小再生、Camera統合、Authoringの順で外側を読む。
+  </li>
+</ol>
+
+<details>
+  <summary>ローカルで動かしながら読む</summary>
+  <pre><code class="language-bash">pnpm install
+pnpm dev
+
+# 別ターミナルで
+pnpm test
+pnpm typecheck</code></pre>
+  <p>
+  Viteが表示するURLの <code>/</code> はEditor、<code>/viewer.html</code> はRuntime Viewer、
+  <code>/camera.html</code> はCamera Compositorです。
+  </p>
+</details>
+
+<details>
+  <summary>仕様の「なぜ」を読む</summary>
+  <p>
+  <a href="./docs/adr/README.md">docs/adr/README.md</a>から、
+  0001、0003、0008、0009、0010、0012、0017、0018の順で読むと、
+  Auto Rigを外した理由からWorkspace分割まで一本につながります。
+  </p>
+</details>
+
+<h2 id="current">現在できることと限界</h2>
+
+<div class="mb-grid-2">
+  <div class="mb-card">
+    <div class="mb-card-label">実装済み</div>
+    <ul>
+      <li>model.jsonの構造検証</li>
+      <li>2点以上のKeyframe列補間</li>
+      <li>複数Parameterのdelta加算</li>
+      <li>任意の頂点Weightを使うSpring</li>
+      <li>PixiJSによる複数Part描画</li>
+      <li>Yaw、Roll、左右Blink、口開閉のCamera追従</li>
+      <li>Accessory、Avatar Overlay、任意背景との合成</li>
+      <li>Canvas映像とAudio TrackのMediaStream合成</li>
+    </ul>
+  </div>
+  <div class="mb-card">
+    <div class="mb-card-label">未完成または未実装</div>
+    <ul>
+      <li>汎用的なPivot・Anchor metadata</li>
+      <li>階層TransformとAttachment</li>
+      <li>Clip Maskと自然なまぶた遮蔽</li>
+      <li>Head Pitch、Gaze、Position Parameter</li>
+      <li>任意モデルを最初から作る完成版Editor</li>
+      <li>AIによるMesh・Key Pose自動生成</li>
+      <li>WebRTC Signalingと通話Room</li>
+      <li>複数Avatarとbundle sizeのBenchmark</li>
+    </ul>
+  </div>
+</div>
+
+<p>
+現在の設計で最も重要なのは、<em>Runtimeの成功とAuthoring自動化の成功を分離している</em>ことです。
+将来AIがMeshやKey Poseを作るようになっても、出力が同じmodel.json契約ならCoreは変更されません。
+逆にAuthoringが手動のままでも、Runtime、Renderer、Camera Adapter、通話組み込みは独立して利用できます。
+</p>
+
+<h3>プロダクトへ組み込むときの最小セット</h3>
+
+<table>
+  <tr><th class="mb-rowlabel">目的</th><th>必要なもの</th></tr>
+  <tr><td class="mb-rowlabel">頂点計算だけ</td><td><code>@mabataki/core</code></td></tr>
+  <tr><td class="mb-rowlabel">Canvasへ描画</td><td>Core + <code>@mabataki/pixi</code>、または独自Renderer</td></tr>
+  <tr><td class="mb-rowlabel">Web Camera追従</td><td>上記 + <code>@mabataki/mediapipe</code>、または独自Tracker Adapter</td></tr>
+  <tr><td class="mb-rowlabel">ビデオ通話へ送信</td><td>上記 + <code>@mabataki/web</code> + 製品既存のWebRTC基盤</td></tr>
+</table>
+
+<p>
+この分解を維持できれば、Mabatakiは「全部入りAvatarアプリ」ではなく、
+Web製品が必要な層だけ選んで組み込めるRuntimeとして成長できます。
+</p>
+
+</main>
+
+<aside class="mb-glossary">
+  <h2>用語リスト</h2>
+  <table>
+    <tr><th>用語</th><th>定義</th></tr>
+    <tr><td>Runtime</td><td>モデルデータと入力値から、描画可能な頂点状態を計算する実行層。</td></tr>
+    <tr><td>Headless</td><td>CanvasやUIを所有せず、計算結果だけを返す設計。</td></tr>
+    <tr><td>Parameter</td><td>表情や姿勢を表す名前付き数値。Runtimeは名前の意味を解釈しない。</td></tr>
+    <tr><td>Part</td><td>TextureとMeshを持つ独立した描画単位。配列順が描画順になる。</td></tr>
+    <tr><td>Texture</td><td>Meshの三角形へ貼る画像。</td></tr>
+    <tr><td>Mesh</td><td>頂点、UV、Triangle indexからなる変形可能な面。</td></tr>
+    <tr><td>Vertex Buffer</td><td>頂点座標を連続格納する配列。本実装ではFloat32Array。</td></tr>
+    <tr><td>UV</td><td>Textureのどの位置を頂点へ対応させるか表す0から1の座標。</td></tr>
+    <tr><td>Key Pose</td><td>特定のParameter値で作者が決めた頂点形状。</td></tr>
+    <tr><td>Keyframe</td><td>Key Poseの値と頂点deltaを保存するモデル要素。</td></tr>
+    <tr><td>Binding</td><td>1個のParameterと、そのKeyframe列をPartへ結び付ける定義。</td></tr>
+    <tr><td>Adapter</td><td>外部Trackerの出力をMabatakiのParameter契約へ変換する層。</td></tr>
+    <tr><td>Renderer</td><td>計算済み頂点とTextureをCanvasへ描画する層。</td></tr>
+    <tr><td>View Transform</td><td>Canvas内でAvatar全体へ適用する位置、回転、拡縮。</td></tr>
+    <tr><td>Smoothing</td><td>Tracker値の細かな揺れを時間方向に抑える処理。</td></tr>
+    <tr><td>Secondary Motion</td><td>主動作へ遅れて追従する髪や耳などの二次的な動き。</td></tr>
+    <tr><td>MediaStream</td><td>ブラウザで映像Trackと音声Trackを扱うコンテナ。</td></tr>
+    <tr><td>WebRTC</td><td>ブラウザ間で映像や音声をリアルタイム送受信する技術群。</td></tr>
+    <tr><td>Workspace</td><td>複数packageを1リポジトリで管理し、依存関係を明示する構成。</td></tr>
+  </table>
+</aside>
+
+</div>
+
+<footer class="mb-footer">
+  Mabataki repository guide / source of truth: local repository at commit 63114dd
+</footer>
+
+</div>
+</body>
+</html>

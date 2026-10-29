@@ -39,7 +39,7 @@ describe('motion presets', () => {
     expect(balloon.translateY).toBe(-26)
     expect(balloon.rotation).toBeGreaterThan(0)
     expect(balloon.rotation).toBeLessThan(0.022)
-    expect(lively.translateY).toBe(-8)
+    expect(lively.translateY).toBeCloseTo(-8)
     expect(lively.scaleY).toBeCloseTo(1.008)
   })
 })

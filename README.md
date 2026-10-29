@@ -16,7 +16,7 @@ auto-rig anything. See [ADR-0015](docs/adr/0015-web-first-minimal-runtime.md)
 for the positioning and alternatives behind this scope.
 
 > Status: **v0.0.1 PoC** — a parameter-driven runtime and key-pose editor with
-> head pose, mouth, and independent blink tracking demos.
+> head pose, mouth, independent blink tracking, and optional 3D face-filter demos.
 
 ## Quick start
 
@@ -66,6 +66,12 @@ avatar over the camera image, and the animated avatar over any uploaded backgrou
 The background mode works without a camera; starting the camera adds expression
 tracking without drawing the user or their room. Background selection, camera
 placement, and scene layout all stay outside the headless runtime.
+
+Open `/filters.html` for the 3D Filter Studio. It demonstrates a face-occluded
+glasses accessory and an opaque full-face mask whose jaw follows `mouthOpen`.
+The filter manifest owns face-relative placement while `@mabataki/ar` resolves
+camera-space pose and `@mabataki/three` renders the asset. Import a `.glb` to
+preview another model and tune its horizontal, vertical, depth, and scale values.
 
 Open `/motion.html` to compare the `grounded`, `floating`, and `lively` motion
 rules side by side, including the named `hover`, `balloon`, and `ghost` floating
@@ -154,18 +160,29 @@ Common motion rules have typed factories. Their output is ordinary Motion Layer
 data and can be mixed with fully custom clips:
 
 ```ts
-import { createFloatingMotion, MotionMixer } from '@mabataki/core'
+import { createFloatingMotion, MotionPlayer } from '@mabataki/core'
 
-const mixer = new MotionMixer(createFloatingMotion({
+const player = new MotionPlayer(createFloatingMotion({
+  style: 'balloon',
   amplitudeX: 12,
   amplitudeY: 30,
   periodMs: 4000,
+  variation: 0.16,
+  seed: 42,
   rotation: 0.018,
   breathing: 0.01,
   weight: 0.8,
   speed: 1.1,
 }))
+
+player.transitionTo(createFloatingMotion({ style: 'hover' }), elapsedMs, 500)
+const motion = player.sample(elapsedMs)
 ```
+
+Floating factories generate several deterministically varied cycles before a
+clip repeats. The same seed reproduces the same rhythm. Catmull–Rom tracks keep
+velocity continuous through intermediate control points, while `MotionPlayer`
+crossfades live preset changes without a root-transform jump.
 
 ```ts
 import { MotionMixer } from '@mabataki/core'
@@ -178,7 +195,7 @@ const mixer = new MotionMixer([{
     loop: true,
     tracks: [{
       target: { kind: 'root', property: 'translateY' },
-      interpolation: 'smoothstep',
+      interpolation: 'catmull-rom',
       keyframes: [
         { timeMs: 0, value: 0 },
         { timeMs: 1200, value: -12 },
@@ -267,14 +284,20 @@ hypothesis holds.
 
 - `packages/core/` — publishable `@mabataki/core`: model validation, parameter
   state, deformation, physics, and smoothing. It has zero package dependencies.
+- `packages/ar/` — renderer- and tracker-independent 3D face-filter manifests,
+  tracking-frame contracts, validation, and face-relative pose resolution.
 - `packages/mediapipe/` — optional face tracking, calibration, landmarks, and accessory anchors.
 - `packages/pixi/` — reusable PixiJS mesh renderer for Core vertex buffers.
+- `packages/three/` — Three.js rendering and glTF/Morph Target integration for
+  `@mabataki/ar` face filters.
 - `packages/web/` — browser helpers for Canvas capture and microphone-track composition.
-- `apps/demo/` — Editor, Viewer, Camera Compositor, Motion Lab, AI participant preview, and assets.
+- `apps/demo/` — Editor, Viewer, Camera Compositor, 3D Filter Studio, Motion Lab,
+  AI participant preview, and sample assets.
 - `docs/adr/` — architecture decision records: why the design is the way it is.
 
-The dependency direction is one-way: applications compose optional packages,
-while `@mabataki/core` never imports a tracker, renderer, or WebRTC integration.
+The dependency direction is one-way: applications compose optional packages;
+`@mabataki/pixi` depends on Core, and `@mabataki/three` depends on AR. Neither
+headless package imports MediaPipe, a renderer, camera code, or WebRTC integration.
 See [ADR-0018](docs/adr/0018-pnpm-workspace-package-boundaries.md).
 
 ## Product integration

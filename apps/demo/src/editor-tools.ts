@@ -5,6 +5,20 @@ export interface SelectionRect {
   y2: number
 }
 
+export function nearestValueIndex(values: readonly number[], target: number): number {
+  if (values.length === 0) throw new Error('nearest value requires at least one candidate')
+  let nearestIndex = 0
+  let nearestDistance = Math.abs(values[0] - target)
+  for (let index = 1; index < values.length; index++) {
+    const distance = Math.abs(values[index] - target)
+    if (distance < nearestDistance) {
+      nearestIndex = index
+      nearestDistance = distance
+    }
+  }
+  return nearestIndex
+}
+
 export function verticesInRect(positions: ArrayLike<number>, rect: SelectionRect): number[] {
   const minX = Math.min(rect.x1, rect.x2)
   const maxX = Math.max(rect.x1, rect.x2)

@@ -3,153 +3,254 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Create, deform, and preview parameter-driven 2D avatar models in the browser."
+    />
+    <meta name="theme-color" content="#0c0f14" />
     <link rel="icon" href="data:," />
-    <title>mabataki — Phase 0 mouth editor</title>
-    <style>
-      :root {
-        color-scheme: dark;
-      }
-      body {
-        margin: 0;
-        font-family: system-ui, sans-serif;
-        background: #14161a;
-        color: #e8e8ea;
-      }
-      header {
-        padding: 10px 16px;
-        border-bottom: 1px solid #2a2d33;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 14px 20px;
-        align-items: center;
-      }
-      h1 {
-        font-size: 14px;
-        margin: 0 8px 0 0;
-        font-weight: 600;
-      }
-      h1 span {
-        color: #9aa0a8;
-        font-weight: 400;
-      }
-      fieldset {
-        border: none;
-        margin: 0;
-        padding: 0;
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      }
-      label {
-        font-size: 12px;
-        display: inline-flex;
-        gap: 4px;
-        align-items: center;
-      }
-      input[type='number'] {
-        width: 52px;
-      }
-      #slider {
-        width: 200px;
-      }
-      #slider-value {
-        font-variant-numeric: tabular-nums;
-        min-width: 4ch;
-      }
-      button {
-        font-size: 12px;
-      }
-      #stage {
-        display: grid;
-        place-items: center;
-        padding: 16px;
-      }
-      #stage canvas {
-        max-width: 100%;
-        height: auto;
-        border: 1px solid #2a2d33;
-        touch-action: none;
-      }
-      #status {
-        font-size: 12px;
-        color: #9aa0a8;
-        padding: 0 16px 12px;
-        margin: 0;
-      }
-      #camera-video {
-        width: 120px;
-        border-radius: 4px;
-        transform: scaleX(-1);
-      }
-      #tracking-values {
-        min-width: 21ch;
-        color: #9aa0a8;
-        font-variant-numeric: tabular-nums;
-      }
-    </style>
+    <link rel="stylesheet" href="/editor.css" />
+    <title>Mabataki Avatar Studio</title>
   </head>
-  <body>
-    <header>
-      <h1>mabataki <span>key pose editor</span></h1>
-      <fieldset>
-        <label>part <select id="part"></select></label>
-        <label>parameter <select id="parameter"></select></label>
-        <label>key pose <select id="key-pose"></select></label>
-      </fieldset>
-      <fieldset>
-        <label><input type="radio" name="mode" value="edit" checked /> edit</label>
-        <label><input type="radio" name="mode" value="preview" /> preview</label>
-      </fieldset>
-      <fieldset>
-        <label>tool
-          <select id="tool">
-            <option value="move">move</option>
-            <option value="box">box select</option>
-            <option value="region">mesh region</option>
-          </select>
+  <body data-mode="edit">
+    <header class="app-bar">
+      <a class="brand" href="/" aria-label="Mabataki Avatar Studio home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>
+          <strong>Mabataki</strong>
+          <small>Avatar Studio</small>
+        </span>
+      </a>
+
+      <nav class="mode-switch" aria-label="Workspace mode">
+        <label class="mode-option">
+          <input type="radio" name="mode" value="edit" checked />
+          <span>Edit</span>
         </label>
-        <label><input id="soft-selection" type="checkbox" checked /> soft</label>
-        <label>radius <input id="soft-radius" type="range" min="10" max="200" value="80" /></label>
-        <span id="selection-count">0 selected</span>
-        <button id="clear-selection">clear</button>
-        <button id="pin-selection">pin selected</button>
-        <button id="unpin-all">unpin all</button>
-        <span id="pin-count">0 pinned</span>
-        <button id="rebuild-region" disabled>rebuild in region</button>
-        <span id="region-status">no region</span>
-        <button id="undo" disabled>undo</button>
-        <button id="redo" disabled>redo</button>
-      </fieldset>
-      <label>
-        <span id="param-name">parameter</span>
-        <input id="slider" type="range" min="0" max="1" step="0.01" value="0" />
-        <span id="slider-value">0.00</span>
-      </label>
-      <label><input id="animate" type="checkbox" /> animate</label>
-      <fieldset>
-        <button id="camera">start camera</button>
-        <label><input id="follow-camera" type="checkbox" /> follow camera</label>
-        <span id="tracking-values">camera off</span>
-        <video id="camera-video" muted playsinline hidden></video>
-      </fieldset>
-      <fieldset>
-        <label>grid <input id="cols" type="number" min="1" max="64" value="8" /> ×
-          <input id="rows" type="number" min="1" max="64" value="6" /></label>
-        <button id="rebuild">rebuild</button>
-        <button id="reset-key">reset key</button>
-      </fieldset>
-      <fieldset>
-        <label>image <input id="image-input" type="file" accept="image/*" /></label>
-        <button id="export">export json</button>
-        <label>import <input id="model-input" type="file" accept="application/json,.json" /></label>
-      </fieldset>
-      <a href="/viewer.html">runtime viewer</a>
-      <a href="/camera.html">camera compositor</a>
-      <a href="/ai-call.html">AI call participant</a>
-      <a href="/motion.html">motion lab</a>
+        <label class="mode-option">
+          <input type="radio" name="mode" value="preview" />
+          <span>Preview</span>
+        </label>
+        <a class="mode-link" href="/camera.html">Live</a>
+        <a class="mode-link" href="/filters.html">3D Filters</a>
+      </nav>
+
+      <div class="app-actions">
+        <label class="button button-secondary file-button">
+          Import model
+          <input id="model-input" type="file" accept="application/json,.json" />
+        </label>
+        <button id="export" class="button button-primary" type="button">Export JSON</button>
+      </div>
     </header>
-    <div id="stage"></div>
-    <p id="status"></p>
+
+    <main class="editor-shell">
+      <aside class="panel model-panel" aria-label="Model structure">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">Model</span>
+            <h1>Structure</h1>
+          </div>
+          <span class="status-dot" title="Model loaded"></span>
+        </div>
+
+        <section class="panel-section">
+          <label class="field">
+            <span>Part</span>
+            <select id="part"></select>
+          </label>
+          <label class="field">
+            <span>Parameter</span>
+            <select id="parameter"></select>
+          </label>
+          <label class="field edit-only">
+            <span>Key pose</span>
+            <select id="key-pose"></select>
+          </label>
+        </section>
+
+        <section class="panel-section edit-only">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Texture</span>
+              <h2>Part image</h2>
+            </div>
+          </div>
+          <label class="drop-input">
+            <span class="drop-icon" aria-hidden="true">+</span>
+            <span>
+              <strong>Replace selected image</strong>
+              <small>PNG, JPEG, or WebP</small>
+            </span>
+            <input id="image-input" type="file" accept="image/*" />
+          </label>
+        </section>
+
+        <section class="panel-section demo-section">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Explore</span>
+              <h2>Runtime demos</h2>
+            </div>
+          </div>
+          <nav class="demo-links" aria-label="Runtime demos">
+            <a href="/viewer.html"><span>Runtime Viewer</span><span aria-hidden="true">↗</span></a>
+            <a href="/motion.html"><span>Motion Lab</span><span aria-hidden="true">↗</span></a>
+            <a href="/filters.html"><span>3D Filter Studio</span><span aria-hidden="true">↗</span></a>
+            <a href="/ai-call.html"><span>AI Participant</span><span aria-hidden="true">↗</span></a>
+          </nav>
+        </section>
+      </aside>
+
+      <section class="workspace" aria-label="Avatar canvas">
+        <header class="workspace-bar">
+          <div class="workspace-title">
+            <span class="eyebrow">Canvas</span>
+            <strong id="workspace-context">Loading model</strong>
+          </div>
+          <p id="mode-help">Select vertices, then drag to shape this key pose.</p>
+          <div class="history-actions edit-only" aria-label="Edit history">
+            <button id="undo" class="icon-button" type="button" disabled title="Undo (⌘Z)">
+              <span aria-hidden="true">↶</span><span class="sr-only">Undo</span>
+            </button>
+            <button id="redo" class="icon-button" type="button" disabled title="Redo (⇧⌘Z)">
+              <span aria-hidden="true">↷</span><span class="sr-only">Redo</span>
+            </button>
+          </div>
+        </header>
+        <div class="stage-viewport">
+          <div id="stage">
+            <div class="stage-loading" role="status">
+              <span class="loading-spinner" aria-hidden="true"></span>
+              Loading avatar…
+            </div>
+          </div>
+        </div>
+        <footer class="status-bar">
+          <span class="status-indicator" aria-hidden="true"></span>
+          <p id="status">Preparing editor…</p>
+        </footer>
+      </section>
+
+      <aside class="panel inspector-panel" aria-label="Inspector">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">Selection</span>
+            <h1>Inspector</h1>
+          </div>
+          <span class="selection-badge" id="selection-count">0 selected</span>
+        </div>
+
+        <section class="panel-section edit-only">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Edit</span>
+              <h2>Mesh tool</h2>
+            </div>
+          </div>
+          <label class="field">
+            <span>Tool</span>
+            <select id="tool">
+              <option value="move">Move vertices</option>
+              <option value="box">Box select</option>
+              <option value="region">Define mesh region</option>
+            </select>
+          </label>
+          <label class="check-row">
+            <span>
+              <strong>Soft selection</strong>
+              <small>Move nearby vertices smoothly</small>
+            </span>
+            <input id="soft-selection" type="checkbox" checked />
+          </label>
+          <label class="range-field">
+            <span><strong>Influence radius</strong><output id="radius-value">80 px</output></span>
+            <input id="soft-radius" type="range" min="10" max="200" value="80" />
+          </label>
+          <div class="button-grid">
+            <button id="clear-selection" class="button button-secondary" type="button">Clear</button>
+            <button id="pin-selection" class="button button-secondary" type="button">Pin selected</button>
+          </div>
+          <div class="inline-status">
+            <span id="pin-count">0 pinned</span>
+            <button id="unpin-all" class="text-button" type="button">Unpin all</button>
+          </div>
+        </section>
+
+        <section class="panel-section parameter-section">
+          <div class="section-heading">
+            <div>
+              <span id="parameter-mode-label" class="eyebrow">Key pose</span>
+              <h2 id="param-name">Parameter</h2>
+            </div>
+            <output id="slider-value" for="slider">0.00</output>
+          </div>
+          <label class="range-field range-primary">
+            <span class="sr-only">Parameter value</span>
+            <input
+              id="slider"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value="0"
+              list="key-pose-ticks"
+            />
+            <datalist id="key-pose-ticks"></datalist>
+          </label>
+          <label class="check-row compact">
+            <span>
+              <strong>Auto preview</strong>
+              <small>Loop through the parameter range</small>
+            </span>
+            <input id="animate" type="checkbox" />
+          </label>
+        </section>
+
+        <section class="panel-section edit-only">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Topology</span>
+              <h2>Mesh grid</h2>
+            </div>
+          </div>
+          <div class="grid-fields">
+            <label class="field"><span>Columns</span><input id="cols" type="number" min="1" max="64" value="8" /></label>
+            <label class="field"><span>Rows</span><input id="rows" type="number" min="1" max="64" value="6" /></label>
+          </div>
+          <div class="button-grid">
+            <button id="rebuild" class="button button-secondary" type="button">Rebuild all</button>
+            <button id="reset-key" class="button button-secondary" type="button">Reset key pose</button>
+          </div>
+          <div class="region-card">
+            <span class="eyebrow">Active region</span>
+            <span id="region-status">No region</span>
+            <button id="rebuild-region" class="button button-secondary" type="button" disabled>
+              Rebuild in region
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-section tracking-section">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Input adapter</span>
+              <h2>Face tracking</h2>
+            </div>
+          </div>
+          <button id="camera" class="button button-secondary full-width" type="button">Start camera</button>
+          <label class="check-row compact">
+            <span>
+              <strong>Follow distance</strong>
+              <small>Scale the avatar from face distance</small>
+            </span>
+            <input id="follow-camera" type="checkbox" />
+          </label>
+          <p id="tracking-values" class="tracking-values">Camera off</p>
+          <video id="camera-video" muted playsinline hidden></video>
+        </section>
+      </aside>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -1,6 +1,6 @@
 # ADR-0012: 頭部姿勢はランドマーク幾何から推定し、全トラッキング値を較正して渡す
 
-- ステータス: Accepted
+- ステータス: Superseded by ADR-0023
 - 日付: 2026-08-17
 - 関連: [ADR-0003](0003-parameter-contract.md), [ADR-0007](0007-tdd-with-colocated-tests.md), [ADR-0010](0010-smoothing-outside-runtime.md)
 

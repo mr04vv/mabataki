@@ -2,19 +2,25 @@ import { FaceLandmarker } from '@mediapipe/tasks-vision'
 
 export type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 export {
+  applyFacePoseToParameters,
+  calibratePoseAngle,
   calibrateEyeOpen,
   calibrateFaceScale,
   calibrateJawOpen,
+  DEFAULT_FACE_POSE_PARAMETER_CALIBRATION,
   estimateFacePlacement,
   estimateFaceWidth,
   estimateHeadRoll,
   estimateHeadYaw,
+  facePoseFromResult,
   faceTrackingFrameFromResult,
   faceValuesFromResult,
   MediaPipeFaceTracker,
 } from './face-tracker.js'
 export type {
   FacePlacement,
+  FacePose,
+  FacePoseParameterCalibration,
   FaceTrackingFrame,
   FaceTrackingValues,
   FaceViewTransform,

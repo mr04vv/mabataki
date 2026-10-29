@@ -16,6 +16,22 @@ const EYE_BLINK_FULL_SCALE = 0.65
 const MIN_VIEW_SCALE = 0.75
 const MAX_VIEW_SCALE = 1.3
 
+export interface FacePoseParameterCalibration {
+  /** Physical yaw angle represented by avatar headYaw ±1. */
+  headYawFullScaleRadians: number
+  /** Physical roll angle represented by avatar headRoll ±1. */
+  headRollFullScaleRadians: number
+  neutralYawRadians: number
+  neutralRollRadians: number
+}
+
+export const DEFAULT_FACE_POSE_PARAMETER_CALIBRATION: FacePoseParameterCalibration = {
+  headYawFullScaleRadians: 35 * Math.PI / 180,
+  headRollFullScaleRadians: 20 * Math.PI / 180,
+  neutralYawRadians: 0,
+  neutralRollRadians: 0,
+}
+
 export interface FaceTrackingValues {
   headYaw: number
   headRoll: number
@@ -44,6 +60,53 @@ export interface FaceTrackingFrame {
   viewTransform: FaceViewTransform
   /** Raw tracker geometry for compositor/debug views; never consumed by the runtime. */
   landmarks: NormalizedLandmark[]
+  /** Optional 3D face pose for camera-space effects; never consumed by the runtime. */
+  facePose: FacePose | null
+}
+
+export interface FacePose {
+  /** MediaPipe's validated 4x4 column-major canonical-face transform. */
+  matrix: readonly number[]
+  /** Mirrored camera-space rotation in radians. */
+  yaw: number
+  pitch: number
+  roll: number
+}
+
+export function calibratePoseAngle(
+  angleRadians: number,
+  neutralRadians: number,
+  fullScaleRadians: number,
+): number {
+  if (
+    !Number.isFinite(angleRadians) ||
+    !Number.isFinite(neutralRadians) ||
+    !Number.isFinite(fullScaleRadians) ||
+    fullScaleRadians <= 0
+  ) throw new Error('pose angle calibration must use finite angles and a positive range')
+  return Math.min(1, Math.max(-1, (angleRadians - neutralRadians) / fullScaleRadians))
+}
+
+/** Maps physical face angles to the model's normalized pose parameters. */
+export function applyFacePoseToParameters(
+  parameters: FaceTrackingValues,
+  pose: FacePose | null,
+  calibration: FacePoseParameterCalibration = DEFAULT_FACE_POSE_PARAMETER_CALIBRATION,
+): FaceTrackingValues {
+  if (pose === null) return parameters
+  return {
+    ...parameters,
+    headYaw: calibratePoseAngle(
+      pose.yaw,
+      calibration.neutralYawRadians,
+      calibration.headYawFullScaleRadians,
+    ),
+    headRoll: calibratePoseAngle(
+      pose.roll,
+      calibration.neutralRollRadians,
+      calibration.headRollFullScaleRadians,
+    ),
+  }
 }
 
 export interface FacePlacement {
@@ -51,6 +114,40 @@ export interface FacePlacement {
   y: number
   faceWidth: number
   rotation: number
+}
+
+/**
+ * Extracts the rigid rotation from MediaPipe's canonical-face transform.
+ * The runtime continues to use calibrated landmarks; this pose is renderer metadata.
+ */
+export function facePoseFromResult(
+  result: FaceLandmarkerResult,
+  mirrored = true,
+): FacePose | null {
+  const matrix = result.facialTransformationMatrixes?.[0]
+  const data = matrix?.data
+  if (
+    matrix === undefined ||
+    matrix.rows !== 4 ||
+    matrix.columns !== 4 ||
+    !Array.isArray(data) ||
+    data.length !== 16 ||
+    data.some((value) => !Number.isFinite(value))
+  ) return null
+
+  const xScale = Math.hypot(data[0], data[1], data[2])
+  const zScale = Math.hypot(data[8], data[9], data[10])
+  if (xScale <= Number.EPSILON || zScale <= Number.EPSILON) return null
+
+  const yaw = Math.atan2(data[8] / zScale, data[10] / zScale)
+  const pitch = Math.asin(Math.min(1, Math.max(-1, -data[9] / zScale)))
+  const roll = Math.atan2(data[1] / xScale, data[0] / xScale)
+  return {
+    matrix: [...data],
+    yaw: mirrored ? -yaw : yaw,
+    pitch,
+    roll: mirrored ? -roll : roll,
+  }
 }
 
 export function estimateFacePlacement(result: FaceLandmarkerResult): FacePlacement | null {
@@ -161,14 +258,18 @@ export function faceValuesFromResult(result: FaceLandmarkerResult): FaceTracking
 export function faceTrackingFrameFromResult(
   result: FaceLandmarkerResult,
   neutralFaceWidth: number | null,
+  poseCalibration: FacePoseParameterCalibration = DEFAULT_FACE_POSE_PARAMETER_CALIBRATION,
 ): FaceTrackingFrame | null {
-  const parameters = faceValuesFromResult(result)
-  if (parameters === null) return null
+  const landmarkParameters = faceValuesFromResult(result)
+  if (landmarkParameters === null) return null
+  const facePose = facePoseFromResult(result)
+  const parameters = applyFacePoseToParameters(landmarkParameters, facePose, poseCalibration)
   const placement = estimateFacePlacement(result)
   const faceWidth = placement?.faceWidth ?? null
   return {
     parameters,
     landmarks: result.faceLandmarks?.[0] ?? [],
+    facePose,
     viewTransform: {
       x: placement?.x ?? 0.5,
       y: placement?.y ?? 0.5,
@@ -188,9 +289,13 @@ export class MediaPipeFaceTracker {
     private readonly landmarker: FaceLandmarker,
     private readonly stream: MediaStream,
     private readonly video: HTMLVideoElement,
+    private readonly poseCalibration: FacePoseParameterCalibration,
   ) {}
 
-  static async create(video: HTMLVideoElement): Promise<MediaPipeFaceTracker> {
+  static async create(
+    video: HTMLVideoElement,
+    poseCalibration: FacePoseParameterCalibration = DEFAULT_FACE_POSE_PARAMETER_CALIBRATION,
+  ): Promise<MediaPipeFaceTracker> {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       audio: false,
@@ -204,8 +309,9 @@ export class MediaPipeFaceTracker {
         runningMode: 'VIDEO',
         numFaces: 1,
         outputFaceBlendshapes: true,
+        outputFacialTransformationMatrixes: true,
       })
-      return new MediaPipeFaceTracker(landmarker, stream, video)
+      return new MediaPipeFaceTracker(landmarker, stream, video, poseCalibration)
     } catch (error) {
       for (const track of stream.getTracks()) track.stop()
       video.srcObject = null
@@ -217,7 +323,7 @@ export class MediaPipeFaceTracker {
     if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null
     const result = this.landmarker.detectForVideo(this.video, timestampMs)
     this.neutralFaceWidth ??= estimateFaceWidth(result)
-    return faceTrackingFrameFromResult(result, this.neutralFaceWidth)
+    return faceTrackingFrameFromResult(result, this.neutralFaceWidth, this.poseCalibration)
   }
 
   close(): void {

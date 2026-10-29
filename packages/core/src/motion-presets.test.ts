@@ -25,7 +25,7 @@ describe('motion preset factories', () => {
     expect(right.translateX).toBe(12)
     expect(right.translateY).toBe(0)
     expect(top.translateX).toBe(0)
-    expect(top.translateY).toBe(-30)
+    expect(top.translateY).toBeCloseTo(-30)
     expect(left.translateX).toBe(-12)
     expect(left.translateY).toBe(0)
     expect(bottom.translateX).toBe(0)
@@ -41,8 +41,8 @@ describe('motion preset factories', () => {
     }))
 
     const frame = mixer.sample(500).root
-    expect(frame.translateX).toBeCloseTo(5)
-    expect(frame.translateY).toBe(-20)
+    expect(frame.translateX).toBeCloseTo(6.25)
+    expect(frame.translateY).toBeCloseTo(-20)
   })
 
   it('provides distinct named floating styles', () => {
@@ -63,7 +63,19 @@ describe('motion preset factories', () => {
       periodYMs: 4000,
     }))
 
-    expect(mixer.sample(1000).root.translateY).toBe(-40)
+    expect(mixer.sample(1000).root.translateY).toBeCloseTo(-40)
+  })
+
+  it('generates long deterministic variation before repeating', () => {
+    const first = createFloatingMotion({ style: 'balloon', seed: 42 })
+    const same = createFloatingMotion({ style: 'balloon', seed: 42 })
+    const different = createFloatingMotion({ style: 'balloon', seed: 43 })
+    const horizontal = first.find((layer) => layer.clip.id === 'balloon-horizontal')
+
+    expect(first).toEqual(same)
+    expect(first).not.toEqual(different)
+    expect(horizontal?.clip.durationMs).toBeGreaterThan(9800 * 3.5)
+    expect(horizontal?.clip.tracks[0].keyframes).toHaveLength(17)
   })
 
   it('keeps grounded motion at the root identity', () => {
@@ -106,6 +118,8 @@ describe('motion preset factories', () => {
     expect(() => createFloatingMotion({ amplitudeY: -1 })).toThrow(/amplitudeY/)
     expect(() => createFloatingMotion({ periodMs: 0 })).toThrow(/periodMs/)
     expect(() => createFloatingMotion({ periodXMs: 0 })).toThrow(/periodXMs/)
+    expect(() => createFloatingMotion({ variation: 0.6 })).toThrow(/variation/)
+    expect(() => createFloatingMotion({ cycleCount: 2.5 })).toThrow(/cycleCount/)
     expect(() => createFloatingMotion({
       style: 'cloud' as FloatingMotionStyle,
     })).toThrow(/style/)

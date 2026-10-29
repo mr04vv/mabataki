@@ -2,7 +2,7 @@ import { Application, Assets, Container, Texture } from 'pixi.js'
 import {
   loadModel,
   MabatakiRuntime,
-  MotionMixer,
+  MotionPlayer,
   ParameterComposer,
 } from '@mabataki/core'
 import { PixiAvatarRenderer } from '@mabataki/pixi'
@@ -141,7 +141,7 @@ const baseParameters = Object.fromEntries(model.parameters.map((parameter) => [
   parameter.default,
 ]))
 const parameterComposer = new ParameterComposer(model.parameters)
-let motionMixer = new MotionMixer(MOTION_PRESETS.balloon.layers)
+const motionPlayer = new MotionPlayer(MOTION_PRESETS.balloon.layers)
 
 let audioContext: AudioContext | null = null
 let analyser: AnalyserNode | null = null
@@ -159,9 +159,8 @@ function setStatus(message: string): void {
 function selectMotionPreset(): void {
   const id = motionPresetEl.value as MotionPresetId
   const preset = MOTION_PRESETS[id]
-  motionMixer = new MotionMixer(preset.layers)
+  motionPlayer.transitionTo(preset.layers, elapsedMs, 500, baseParameters)
   motionDescriptionEl.textContent = preset.description
-  elapsedMs = 0
 }
 
 motionPresetEl.addEventListener('change', selectMotionPreset)
@@ -236,7 +235,7 @@ app.ticker.add((ticker) => {
     ? audioLevel(analyser, analyserSamples)
     : 0
   mouthOpen = smoothMouthOpen(mouthOpen, audioLevelToMouthOpen(level), deltaMs)
-  const motion = motionMixer.sample(elapsedMs)
+  const motion = motionPlayer.sample(elapsedMs, baseParameters)
   runtime.update(parameterComposer.compose([
     { id: 'idle-motion', values: motion.parameters },
     { id: 'voice', values: { mouthOpen }, include: ['mouthOpen'] },

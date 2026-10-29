@@ -30,13 +30,15 @@ avatar.update(composer.compose([
 Automatic motion remains data-driven:
 
 ```ts
-import { createFloatingMotion, MotionMixer } from '@mabataki/core'
+import { createFloatingMotion, MotionPlayer } from '@mabataki/core'
 
-const motion = new MotionMixer(createFloatingMotion({
+const motion = new MotionPlayer(createFloatingMotion({
   style: 'balloon',
   amplitudeX: 12,
   amplitudeY: 30,
   periodMs: 4000,
+  variation: 0.16,
+  seed: 42,
 }))
 
 const frame = motion.sample(elapsedMs)
@@ -45,5 +47,7 @@ avatar.step(deltaMs, frame.root) // lets attached physics react to root motion
 
 Choose `hover`, `balloon`, or `ghost` as a starting style. Every amplitude and
 period option can still override that style without adding runtime branches.
+Generated variation is deterministic for a given seed, Catmull–Rom tracks keep
+motion continuous, and `MotionPlayer.transitionTo()` crossfades style changes.
 
 Tracking, rendering, camera composition, and media transport stay outside Core.

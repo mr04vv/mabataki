@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { softSelectionWeights, verticesInRect } from './editor-tools'
+import { nearestValueIndex, softSelectionWeights, verticesInRect } from './editor-tools'
+
+describe('nearestValueIndex', () => {
+  it('selects the nearest authored key pose', () => {
+    expect(nearestValueIndex([-1, 0, 1], -0.8)).toBe(0)
+    expect(nearestValueIndex([-1, 0, 1], 0.2)).toBe(1)
+    expect(nearestValueIndex([-1, 0, 1], 1)).toBe(2)
+  })
+
+  it('keeps the first key pose when distances are equal', () => {
+    expect(nearestValueIndex([-1, 0, 1], 0.5)).toBe(1)
+  })
+})
 
 describe('verticesInRect', () => {
   it('selects vertices regardless of drag direction', () => {

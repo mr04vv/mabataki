@@ -3,7 +3,7 @@ import {
   createFloatingMotion,
   loadModel,
   MabatakiRuntime,
-  MotionMixer,
+  MotionPlayer,
 } from '@mabataki/core'
 import type { MotionLayer } from '@mabataki/core'
 import { PixiAvatarRenderer } from '@mabataki/pixi'
@@ -33,9 +33,14 @@ function $<T extends HTMLElement>(selector: string): T {
 const floatXEl = $<HTMLInputElement>('#float-x')
 const floatYEl = $<HTMLInputElement>('#float-y')
 const floatPeriodEl = $<HTMLInputElement>('#float-period')
+const floatVariationEl = $<HTMLInputElement>('#float-variation')
 const floatXValueEl = $<HTMLOutputElement>('#float-x-value')
 const floatYValueEl = $<HTMLOutputElement>('#float-y-value')
 const floatPeriodValueEl = $<HTMLOutputElement>('#float-period-value')
+const floatVariationValueEl = $<HTMLOutputElement>('#float-variation-value')
+const floatRerollEl = $<HTMLButtonElement>('#float-reroll')
+const floatSeedEl = $('#float-seed')
+let floatSeed = 42
 
 const model = await loadModel(MODEL_URL)
 const modelBaseUrl = new URL(MODEL_URL, location.href)
@@ -80,13 +85,13 @@ async function mountPreview(
   avatar.scale.set(baseScale)
   app.stage.addChild(avatar)
 
-  let mixer = new MotionMixer(layers)
+  const player = new MotionPlayer(layers)
   let elapsedMs = 0
   description.textContent = descriptionText
 
   app.ticker.add((ticker) => {
     elapsedMs += ticker.deltaMS
-    const motion = mixer.sample(elapsedMs, baseParameters)
+    const motion = player.sample(elapsedMs, baseParameters)
     runtime.update(motion.parameters)
     runtime.step(ticker.deltaMS, motion.root)
     renderer.render()
@@ -107,8 +112,7 @@ async function mountPreview(
 
   return {
     setLayers(nextLayers): void {
-      mixer = new MotionMixer(nextLayers)
-      elapsedMs = 0
+      player.transitionTo(nextLayers, elapsedMs, 400, baseParameters)
     },
   }
 }
@@ -133,14 +137,23 @@ function updateFloatingSettings(): void {
   floatXValueEl.value = String(floatXEl.valueAsNumber)
   floatYValueEl.value = String(floatYEl.valueAsNumber)
   floatPeriodValueEl.value = `${(floatPeriodEl.valueAsNumber / 1000).toFixed(1)}s`
+  floatVariationValueEl.value = `${Math.round(floatVariationEl.valueAsNumber * 100)}%`
+  floatSeedEl.textContent = String(floatSeed)
   configurableFloating?.setLayers(createFloatingMotion({
     amplitudeX: floatXEl.valueAsNumber,
     amplitudeY: floatYEl.valueAsNumber,
     periodMs: floatPeriodEl.valueAsNumber,
+    variation: floatVariationEl.valueAsNumber,
+    seed: floatSeed,
   }))
 }
 
 floatXEl.addEventListener('input', updateFloatingSettings)
 floatYEl.addEventListener('input', updateFloatingSettings)
 floatPeriodEl.addEventListener('input', updateFloatingSettings)
+floatVariationEl.addEventListener('input', updateFloatingSettings)
+floatRerollEl.addEventListener('click', () => {
+  floatSeed = Math.floor(Math.random() * 1_000_000)
+  updateFloatingSettings()
+})
 updateFloatingSettings()
